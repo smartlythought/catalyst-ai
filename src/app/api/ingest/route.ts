@@ -34,9 +34,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No tickers in database" }, { status: 500 });
   }
 
-  // 2. Batch-fetch quotes for ALL tickers via FMP (single API call per batch of 100)
+  // 2. Batch-fetch quotes for ALL tickers via FMP (~500 per call)
   const quotesMap = new Map<string, any>();
-  const symbolChunks = chunkArray(allTickers.map((t) => t.symbol), 100);
+  const symbolChunks = chunkArray(allTickers.map((t) => t.symbol), 500);
 
   for (const chunk of symbolChunks) {
     try {
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
         }
       }
     } catch {}
-    await delay(200);
+    await delay(150);
   }
 
   // 3. Score tickers for signal potential

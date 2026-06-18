@@ -3,140 +3,6 @@ import { createServiceClient } from "@/lib/supabase/server";
 
 const FMP_KEY = process.env.FMP_API_KEY || "";
 
-const CORE_TICKERS: [string, string, string, string][] = [
-  // [symbol, name, exchange, sector]
-  // Mega-cap tech
-  ["AAPL", "Apple Inc.", "NASDAQ", "Technology"],
-  ["MSFT", "Microsoft Corporation", "NASDAQ", "Technology"],
-  ["GOOGL", "Alphabet Inc.", "NASDAQ", "Technology"],
-  ["AMZN", "Amazon.com, Inc.", "NASDAQ", "Consumer Cyclical"],
-  ["NVDA", "NVIDIA Corporation", "NASDAQ", "Technology"],
-  ["META", "Meta Platforms, Inc.", "NASDAQ", "Technology"],
-  ["TSLA", "Tesla, Inc.", "NASDAQ", "Consumer Cyclical"],
-  ["AVGO", "Broadcom Inc.", "NASDAQ", "Technology"],
-  ["ORCL", "Oracle Corporation", "NYSE", "Technology"],
-  ["ADBE", "Adobe Inc.", "NASDAQ", "Technology"],
-  ["CRM", "Salesforce, Inc.", "NYSE", "Technology"],
-  ["AMD", "Advanced Micro Devices, Inc.", "NASDAQ", "Technology"],
-  ["NFLX", "Netflix, Inc.", "NASDAQ", "Communication Services"],
-  ["INTC", "Intel Corporation", "NASDAQ", "Technology"],
-  ["CSCO", "Cisco Systems, Inc.", "NASDAQ", "Technology"],
-  ["QCOM", "QUALCOMM Incorporated", "NASDAQ", "Technology"],
-  ["TXN", "Texas Instruments Incorporated", "NASDAQ", "Technology"],
-  ["IBM", "International Business Machines", "NYSE", "Technology"],
-  ["NOW", "ServiceNow, Inc.", "NYSE", "Technology"],
-  ["INTU", "Intuit Inc.", "NASDAQ", "Technology"],
-  ["AMAT", "Applied Materials, Inc.", "NASDAQ", "Technology"],
-  ["ISRG", "Intuitive Surgical, Inc.", "NASDAQ", "Healthcare"],
-  ["MU", "Micron Technology, Inc.", "NASDAQ", "Technology"],
-  ["LRCX", "Lam Research Corporation", "NASDAQ", "Technology"],
-  ["KLAC", "KLA Corporation", "NASDAQ", "Technology"],
-  ["SNPS", "Synopsys, Inc.", "NASDAQ", "Technology"],
-  ["CDNS", "Cadence Design Systems", "NASDAQ", "Technology"],
-  ["MRVL", "Marvell Technology, Inc.", "NASDAQ", "Technology"],
-  ["PANW", "Palo Alto Networks, Inc.", "NASDAQ", "Technology"],
-  ["CRWD", "CrowdStrike Holdings", "NASDAQ", "Technology"],
-  // AI & Cloud
-  ["PLTR", "Palantir Technologies Inc.", "NYSE", "Technology"],
-  ["SNOW", "Snowflake Inc.", "NYSE", "Technology"],
-  ["ARM", "Arm Holdings plc", "NASDAQ", "Technology"],
-  ["SMCI", "Super Micro Computer, Inc.", "NASDAQ", "Technology"],
-  ["NET", "Cloudflare, Inc.", "NYSE", "Technology"],
-  ["DDOG", "Datadog, Inc.", "NASDAQ", "Technology"],
-  ["ZS", "Zscaler, Inc.", "NASDAQ", "Technology"],
-  ["MDB", "MongoDB, Inc.", "NASDAQ", "Technology"],
-  ["TEAM", "Atlassian Corporation", "NASDAQ", "Technology"],
-  ["WDAY", "Workday, Inc.", "NASDAQ", "Technology"],
-  // Finance
-  ["JPM", "JPMorgan Chase & Co.", "NYSE", "Financial Services"],
-  ["V", "Visa Inc.", "NYSE", "Financial Services"],
-  ["MA", "Mastercard Incorporated", "NYSE", "Financial Services"],
-  ["BAC", "Bank of America Corporation", "NYSE", "Financial Services"],
-  ["WFC", "Wells Fargo & Company", "NYSE", "Financial Services"],
-  ["GS", "The Goldman Sachs Group", "NYSE", "Financial Services"],
-  ["MS", "Morgan Stanley", "NYSE", "Financial Services"],
-  ["BLK", "BlackRock, Inc.", "NYSE", "Financial Services"],
-  ["AXP", "American Express Company", "NYSE", "Financial Services"],
-  ["C", "Citigroup Inc.", "NYSE", "Financial Services"],
-  ["SCHW", "Charles Schwab Corporation", "NYSE", "Financial Services"],
-  ["COIN", "Coinbase Global, Inc.", "NASDAQ", "Financial Services"],
-  ["SQ", "Block, Inc.", "NYSE", "Financial Services"],
-  ["PYPL", "PayPal Holdings, Inc.", "NASDAQ", "Financial Services"],
-  ["SOFI", "SoFi Technologies, Inc.", "NASDAQ", "Financial Services"],
-  // Healthcare
-  ["UNH", "UnitedHealth Group", "NYSE", "Healthcare"],
-  ["JNJ", "Johnson & Johnson", "NYSE", "Healthcare"],
-  ["LLY", "Eli Lilly and Company", "NYSE", "Healthcare"],
-  ["PFE", "Pfizer Inc.", "NYSE", "Healthcare"],
-  ["ABBV", "AbbVie Inc.", "NYSE", "Healthcare"],
-  ["MRK", "Merck & Co., Inc.", "NYSE", "Healthcare"],
-  ["TMO", "Thermo Fisher Scientific", "NYSE", "Healthcare"],
-  ["ABT", "Abbott Laboratories", "NYSE", "Healthcare"],
-  ["DHR", "Danaher Corporation", "NYSE", "Healthcare"],
-  ["BMY", "Bristol-Myers Squibb", "NYSE", "Healthcare"],
-  ["AMGN", "Amgen Inc.", "NASDAQ", "Healthcare"],
-  ["GILD", "Gilead Sciences, Inc.", "NASDAQ", "Healthcare"],
-  ["MRNA", "Moderna, Inc.", "NASDAQ", "Healthcare"],
-  // Consumer
-  ["WMT", "Walmart Inc.", "NYSE", "Consumer Defensive"],
-  ["PG", "The Procter & Gamble Company", "NYSE", "Consumer Defensive"],
-  ["KO", "The Coca-Cola Company", "NYSE", "Consumer Defensive"],
-  ["PEP", "PepsiCo, Inc.", "NASDAQ", "Consumer Defensive"],
-  ["COST", "Costco Wholesale Corporation", "NASDAQ", "Consumer Defensive"],
-  ["HD", "The Home Depot, Inc.", "NYSE", "Consumer Cyclical"],
-  ["MCD", "McDonald's Corporation", "NYSE", "Consumer Cyclical"],
-  ["NKE", "NIKE, Inc.", "NYSE", "Consumer Cyclical"],
-  ["SBUX", "Starbucks Corporation", "NASDAQ", "Consumer Cyclical"],
-  ["TGT", "Target Corporation", "NYSE", "Consumer Defensive"],
-  ["LOW", "Lowe's Companies, Inc.", "NYSE", "Consumer Cyclical"],
-  // Industrials & Energy
-  ["CAT", "Caterpillar Inc.", "NYSE", "Industrials"],
-  ["GE", "GE Aerospace", "NYSE", "Industrials"],
-  ["BA", "The Boeing Company", "NYSE", "Industrials"],
-  ["RTX", "RTX Corporation", "NYSE", "Industrials"],
-  ["HON", "Honeywell International", "NASDAQ", "Industrials"],
-  ["UPS", "United Parcel Service", "NYSE", "Industrials"],
-  ["DE", "Deere & Company", "NYSE", "Industrials"],
-  ["XOM", "Exxon Mobil Corporation", "NYSE", "Energy"],
-  ["CVX", "Chevron Corporation", "NYSE", "Energy"],
-  ["COP", "ConocoPhillips", "NYSE", "Energy"],
-  ["SLB", "Schlumberger Limited", "NYSE", "Energy"],
-  // Communications
-  ["DIS", "The Walt Disney Company", "NYSE", "Communication Services"],
-  ["CMCSA", "Comcast Corporation", "NASDAQ", "Communication Services"],
-  ["T", "AT&T Inc.", "NYSE", "Communication Services"],
-  ["VZ", "Verizon Communications", "NYSE", "Communication Services"],
-  ["TMUS", "T-Mobile US, Inc.", "NASDAQ", "Communication Services"],
-  ["SPOT", "Spotify Technology S.A.", "NYSE", "Communication Services"],
-  // Real Estate & Utilities
-  ["AMT", "American Tower Corporation", "NYSE", "Real Estate"],
-  ["PLD", "Prologis, Inc.", "NYSE", "Real Estate"],
-  ["NEE", "NextEra Energy, Inc.", "NYSE", "Utilities"],
-  ["DUK", "Duke Energy Corporation", "NYSE", "Utilities"],
-  ["SO", "The Southern Company", "NYSE", "Utilities"],
-  // EV & Mobility
-  ["RIVN", "Rivian Automotive, Inc.", "NASDAQ", "Consumer Cyclical"],
-  ["LCID", "Lucid Group, Inc.", "NASDAQ", "Consumer Cyclical"],
-  ["UBER", "Uber Technologies, Inc.", "NYSE", "Technology"],
-  ["LYFT", "Lyft, Inc.", "NASDAQ", "Technology"],
-  ["ABNB", "Airbnb, Inc.", "NASDAQ", "Consumer Cyclical"],
-  // E-commerce & Retail
-  ["SHOP", "Shopify Inc.", "NYSE", "Technology"],
-  ["SQ", "Block, Inc.", "NYSE", "Financial Services"],
-  ["MELI", "MercadoLibre, Inc.", "NASDAQ", "Consumer Cyclical"],
-  ["SE", "Sea Limited", "NYSE", "Communication Services"],
-  ["BABA", "Alibaba Group", "NYSE", "Consumer Cyclical"],
-  // Crypto & Fintech
-  ["MSTR", "MicroStrategy Incorporated", "NASDAQ", "Technology"],
-  ["MARA", "Marathon Digital Holdings", "NASDAQ", "Financial Services"],
-  ["RIOT", "Riot Platforms, Inc.", "NASDAQ", "Financial Services"],
-  // Materials
-  ["LIN", "Linde plc", "NASDAQ", "Basic Materials"],
-  ["APD", "Air Products and Chemicals", "NYSE", "Basic Materials"],
-  ["FCX", "Freeport-McMoRan Inc.", "NYSE", "Basic Materials"],
-  ["NEM", "Newmont Corporation", "NYSE", "Basic Materials"],
-];
-
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
@@ -144,82 +10,131 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!FMP_KEY) {
+    return NextResponse.json(
+      { error: "FMP_API_KEY not configured" },
+      { status: 500 }
+    );
+  }
+
+  const startTime = Date.now();
   const supabase = createServiceClient();
   let inserted = 0;
   let updated = 0;
+  let skipped = 0;
 
-  // 1. Upsert core tickers list
-  for (const [symbol, name, exchange, sector] of CORE_TICKERS) {
-    const { data: existing } = await supabase
+  // 1. Fetch ALL US-traded stocks from FMP
+  let allStocks: any[] = [];
+  try {
+    const res = await fetch(
+      `https://financialmodelingprep.com/api/v3/stock/list?apikey=${FMP_KEY}`
+    );
+    if (res.ok) {
+      const raw = await res.json();
+      allStocks = (raw || []).filter(
+        (s: any) =>
+          s.symbol &&
+          s.name &&
+          s.exchangeShortName &&
+          ["NASDAQ", "NYSE", "AMEX"].includes(s.exchangeShortName) &&
+          s.type === "stock" &&
+          (s.price === undefined || s.price >= 1)
+      );
+    }
+  } catch (e) {
+    return NextResponse.json(
+      { error: `FMP stock/list failed: ${e}` },
+      { status: 502 }
+    );
+  }
+
+  if (allStocks.length === 0) {
+    return NextResponse.json(
+      { error: "FMP returned 0 US stocks" },
+      { status: 502 }
+    );
+  }
+
+  // 2. Batch upsert into Supabase (chunks of 100 for upsert)
+  const chunks = chunkArray(allStocks, 100);
+
+  for (const chunk of chunks) {
+    if (Date.now() - startTime > 50000) break; // safety for 60s timeout
+
+    const rows = chunk.map((s: any) => ({
+      symbol: s.symbol,
+      company_name: s.name.slice(0, 200),
+      exchange: s.exchangeShortName,
+    }));
+
+    const { data: existingRows } = await supabase
       .from("tickers")
-      .select("id")
-      .eq("symbol", symbol)
-      .single();
+      .select("symbol")
+      .in(
+        "symbol",
+        rows.map((r: any) => r.symbol)
+      );
 
-    if (existing) {
+    const existingSet = new Set(
+      (existingRows || []).map((r: any) => r.symbol)
+    );
+
+    const toInsert = rows.filter((r: any) => !existingSet.has(r.symbol));
+    const toUpdate = rows.filter((r: any) => existingSet.has(r.symbol));
+
+    if (toInsert.length > 0) {
+      const { error } = await supabase.from("tickers").insert(toInsert);
+      if (!error) {
+        inserted += toInsert.length;
+      } else {
+        // Fallback: insert one by one to skip duplicates
+        for (const row of toInsert) {
+          const { error: e2 } = await supabase.from("tickers").insert(row);
+          if (!e2) inserted++;
+          else skipped++;
+        }
+      }
+    }
+
+    for (const row of toUpdate) {
       await supabase
         .from("tickers")
-        .update({ company_name: name, sector, exchange })
-        .eq("id", existing.id);
+        .update({ company_name: row.company_name, exchange: row.exchange })
+        .eq("symbol", row.symbol);
       updated++;
-    } else {
-      const { error } = await supabase.from("tickers").insert({
-        symbol,
-        company_name: name,
-        exchange,
-        sector,
-      });
-      if (!error) inserted++;
     }
   }
 
-  // 2. Try FMP stock list for additional tickers
-  if (FMP_KEY) {
-    try {
-      const res = await fetch(
-        `https://financialmodelingprep.com/api/v3/stock/list?apikey=${FMP_KEY}`
-      );
-      if (res.ok) {
-        const stocks = await res.json();
-        const usStocks = (stocks || [])
-          .filter(
-            (s: any) =>
-              s.exchangeShortName &&
-              ["NASDAQ", "NYSE", "AMEX"].includes(s.exchangeShortName) &&
-              s.type === "stock" &&
-              s.price > 5 &&
-              s.name
-          )
-          .sort((a: any, b: any) => (b.marketCap || 0) - (a.marketCap || 0))
-          .slice(0, 300);
-
-        for (const s of usStocks) {
-          const { data: existing } = await supabase
+  // 3. Enrich with sector/industry data from FMP profiles (top 500 by market cap)
+  try {
+    const res = await fetch(
+      `https://financialmodelingprep.com/api/v3/stock-screener?marketCapMoreThan=2000000000&exchange=NYSE,NASDAQ&limit=500&apikey=${FMP_KEY}`
+    );
+    if (res.ok) {
+      const screened = await res.json();
+      for (const s of screened || []) {
+        if (s.symbol && (s.sector || s.industry)) {
+          await supabase
             .from("tickers")
-            .select("id")
-            .eq("symbol", s.symbol)
-            .single();
-
-          if (!existing) {
-            const { error } = await supabase.from("tickers").insert({
-              symbol: s.symbol,
-              company_name: s.name,
-              exchange: s.exchangeShortName,
-            });
-            if (!error) inserted++;
-          }
+            .update({
+              sector: s.sector || null,
+              industry: s.industry || null,
+              market_cap: s.marketCap || null,
+            })
+            .eq("symbol", s.symbol);
         }
       }
-    } catch {}
-  }
+    }
+  } catch {}
 
-  // 3. Backfill CIK numbers
+  // 4. Backfill CIK numbers from SEC EDGAR
+  let cikBackfilled = 0;
   try {
     const { data: noCik } = await supabase
       .from("tickers")
       .select("id, symbol")
       .is("cik", null)
-      .limit(200);
+      .limit(500);
 
     if (noCik?.length) {
       const cikRes = await fetch(
@@ -242,15 +157,30 @@ export async function POST(request: NextRequest) {
           const cik = cikMap.get(t.symbol);
           if (cik) {
             await supabase.from("tickers").update({ cik }).eq("id", t.id);
+            cikBackfilled++;
           }
         }
       }
     }
   } catch {}
 
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
   return NextResponse.json({
     inserted,
     updated,
-    message: `Universe refreshed: ${inserted} new tickers, ${updated} updated`,
+    skipped,
+    cikBackfilled,
+    totalFromFMP: allStocks.length,
+    elapsedSeconds: elapsed,
+    message: `Universe refreshed: ${inserted} new, ${updated} updated, ${allStocks.length} total US stocks from FMP`,
   });
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
 }
