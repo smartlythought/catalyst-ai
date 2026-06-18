@@ -7,7 +7,7 @@
  */
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
-const SEC_USER_AGENT = process.env.SEC_EDGAR_USER_AGENT || "Catalyst research@claudeo.ai";
+const SEC_USER_AGENT = process.env.SEC_EDGAR_USER_AGENT || "Catalyst research@catalyst.claudeo.ai";
 
 interface EcosystemEdge {
   sourceTicker: string;

@@ -1,6 +1,6 @@
 const SEC_BASE = "https://data.sec.gov";
 const EFTS_BASE = "https://efts.sec.gov/LATEST";
-const USER_AGENT = process.env.SEC_EDGAR_USER_AGENT || "Catalyst research@claudeo.ai";
+const USER_AGENT = process.env.SEC_EDGAR_USER_AGENT || "Catalyst research@catalyst.claudeo.ai";
 
 const HEADERS = {
   "User-Agent": USER_AGENT,

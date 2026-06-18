@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Catalyst — AI Stock Analyst",
     description: "Real-time AI stock signals with BUY/REDUCE/WATCH calls.",
-    url: "https://claudeo.ai",
+    url: "https://catalyst.claudeo.ai",
     siteName: "Catalyst",
     type: "website",
   },

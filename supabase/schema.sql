@@ -1,9 +1,9 @@
 -- Catalyst Database Schema
 -- Run this in Supabase SQL Editor to set up all tables
 
--- Enable required extensions
-CREATE EXTENSION IF NOT EXISTS "pgvector";
-CREATE EXTENSION IF NOT EXISTS "pg_cron";
+-- Optional extensions (enable via Supabase Dashboard > Database > Extensions if needed)
+-- pgvector: only needed later for AI embedding search
+-- pg_cron: only needed for scheduled jobs on Supabase Pro
 
 -- ============================================================
 -- TICKERS: Master list of tracked US stocks
