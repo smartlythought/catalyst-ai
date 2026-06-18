@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { getRecentForm4, getRecent8K } from "@/lib/ingestion/sec-edgar";
-import { getQuote, getAnalystRatings } from "@/lib/ingestion/market-data";
+import { getAnalystRatings } from "@/lib/ingestion/market-data";
+import { getCompanyNews, classifySentiment } from "@/lib/ingestion/news";
 import { generateCall } from "@/lib/ai/gemini";
 import {
   storeIngestionResults,
@@ -8,16 +10,7 @@ import {
   logIngestion,
 } from "@/lib/supabase/queries";
 
-const TRACKED_TICKERS = [
-  { symbol: "NVDA", cik: "1045810", company: "NVIDIA Corporation" },
-  { symbol: "AAPL", cik: "320193", company: "Apple Inc." },
-  { symbol: "MSFT", cik: "789019", company: "Microsoft Corporation" },
-  { symbol: "GOOGL", cik: "1652044", company: "Alphabet Inc." },
-  { symbol: "META", cik: "1326801", company: "Meta Platforms, Inc." },
-  { symbol: "TSLA", cik: "1318605", company: "Tesla, Inc." },
-  { symbol: "AMD", cik: "2488", company: "Advanced Micro Devices, Inc." },
-  { symbol: "AMZN", cik: "1018724", company: "Amazon.com, Inc." },
-];
+const FMP_KEY = process.env.FMP_API_KEY || "";
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -26,124 +19,221 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const startTime = Date.now();
   await logIngestion("full_pipeline", "running", 0);
-  const results = [];
 
-  for (const ticker of TRACKED_TICKERS) {
+  const supabase = createServiceClient();
+
+  // 1. Get all active tickers
+  const { data: allTickers } = await supabase
+    .from("tickers")
+    .select("id, symbol, company_name, cik, sector")
+    .eq("is_active", true) as { data: { id: number; symbol: string; company_name: string; cik: string | null; sector: string | null }[] | null };
+
+  if (!allTickers?.length) {
+    return NextResponse.json({ error: "No tickers in database" }, { status: 500 });
+  }
+
+  // 2. Batch-fetch quotes for ALL tickers via FMP (single API call per batch of 100)
+  const quotesMap = new Map<string, any>();
+  const symbolChunks = chunkArray(allTickers.map((t) => t.symbol), 100);
+
+  for (const chunk of symbolChunks) {
     try {
-      const [form4s, filings8k, quote, analysts] = await Promise.all([
-        getRecentForm4(ticker.cik).catch(() => []),
-        getRecent8K(ticker.cik).catch(() => []),
-        getQuote(ticker.symbol),
-        getAnalystRatings(ticker.symbol),
-      ]);
-
-      if (!quote) {
-        results.push({
-          ticker: ticker.symbol,
-          status: "skip",
-          reason: "no quote",
-        });
-        continue;
-      }
-
-      for (const f4 of form4s.slice(0, 5)) {
-        await storeInsiderTrade(ticker.symbol, {
-          filerName: f4.filerName,
-          filerRole: f4.filerRole,
-          tradeType: f4.transactionType,
-          shares: f4.shares,
-          pricePerShare: f4.pricePerShare,
-          totalValue: f4.totalValue,
-          sharesOwnedAfter: f4.sharesOwnedAfter,
-          filingDate: f4.filingDate,
-          transactionDate: f4.transactionDate,
-          accessionNumber: f4.accessionNumber,
-        });
-      }
-
-      const signals: {
-        source: string;
-        title: string;
-        detail: string;
-        sentiment: string;
-      }[] = [];
-
-      for (const f4 of form4s.slice(0, 5)) {
-        const isBuy = f4.transactionType === "P";
-        signals.push({
-          source: "insider_trade",
-          title: `${f4.filerRole} ${f4.filerName} ${isBuy ? "buys" : "sells"} $${(f4.totalValue / 1e6).toFixed(1)}M`,
-          detail: `${f4.shares.toLocaleString()} shares at $${f4.pricePerShare.toFixed(2)} on ${f4.transactionDate}`,
-          sentiment: isBuy ? "positive" : "negative",
-        });
-      }
-
-      for (const f8k of filings8k.slice(0, 3)) {
-        signals.push({
-          source: "sec_filing",
-          title: `8-K Filed: ${f8k.description}`,
-          detail: `Filed ${f8k.filingDate}`,
-          sentiment: "neutral",
-        });
-      }
-
-      if (signals.length === 0) {
-        results.push({
-          ticker: ticker.symbol,
-          status: "skip",
-          reason: "no signals",
-        });
-        continue;
-      }
-
-      const aiResult = await generateCall({
-        ticker: ticker.symbol,
-        company: ticker.company,
-        currentPrice: quote.price,
-        signals,
-        analystConsensus: analysts
-          ? {
-              buy: analysts.buy + analysts.strongBuy,
-              hold: analysts.hold,
-              sell: analysts.sell + analysts.strongSell,
-              avgTarget: 0,
-            }
-          : undefined,
-      });
-
-      await storeIngestionResults(
-        ticker.symbol,
-        signals,
-        aiResult,
-        "gemini-2.5-flash"
+      const res = await fetch(
+        `https://financialmodelingprep.com/api/v3/quote/${chunk.join(",")}?apikey=${FMP_KEY}`
       );
+      if (res.ok) {
+        const data = await res.json();
+        for (const q of data || []) {
+          quotesMap.set(q.symbol, {
+            price: q.price,
+            change: q.change,
+            changePercent: q.changesPercentage,
+            volume: q.volume,
+            avgVolume: q.avgVolume,
+          });
+        }
+      }
+    } catch {}
+    await delay(200);
+  }
 
-      results.push({
-        ticker: ticker.symbol,
-        status: "ok",
-        call: aiResult.call,
-        conviction: aiResult.conviction,
-        signalCount: signals.length,
-      });
+  // 3. Score tickers for signal potential
+  const scored = allTickers
+    .map((t) => {
+      const q = quotesMap.get(t.symbol);
+      let score = 0;
+      if (q) {
+        if (Math.abs(q.changePercent || 0) > 3) score += 3;
+        else if (Math.abs(q.changePercent || 0) > 1.5) score += 1;
+        if (q.volume > (q.avgVolume || 0) * 1.5) score += 2;
+        if (q.price > 0) score += 1;
+      }
+      if (t.cik) score += 1;
+      return { ...t, score, quote: q };
+    })
+    .sort((a, b) => b.score - a.score);
 
-      await new Promise((r) => setTimeout(r, 2000));
-    } catch (err) {
-      results.push({
-        ticker: ticker.symbol,
-        status: "error",
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
-    }
+  // Take top 30 for SEC + news analysis
+  const topTickers = scored.slice(0, 30);
+  const results: any[] = [];
+
+  // 4. Fetch SEC data + news for top tickers (parallel batches of 5)
+  const tickerSignals = new Map<string, any[]>();
+
+  for (const batch of chunkArray(topTickers, 5)) {
+    await Promise.all(
+      batch.map(async (ticker) => {
+        const signals: any[] = [];
+
+        // SEC Form 4 (insider trades)
+        if (ticker.cik) {
+          try {
+            const form4s = await getRecentForm4(ticker.cik);
+            for (const f4 of form4s.slice(0, 3)) {
+              await storeInsiderTrade(ticker.symbol, {
+                filerName: f4.filerName,
+                filerRole: f4.filerRole,
+                tradeType: f4.transactionType,
+                shares: f4.shares,
+                pricePerShare: f4.pricePerShare,
+                totalValue: f4.totalValue,
+                sharesOwnedAfter: f4.sharesOwnedAfter,
+                filingDate: f4.filingDate,
+                transactionDate: f4.transactionDate,
+                accessionNumber: f4.accessionNumber,
+              });
+              const isBuy = f4.transactionType === "P";
+              signals.push({
+                source: "insider_trade",
+                title: `${f4.filerRole} ${f4.filerName} ${isBuy ? "buys" : "sells"} $${((f4.totalValue || 0) / 1e6).toFixed(1)}M`,
+                detail: `${(f4.shares || 0).toLocaleString()} shares at $${(f4.pricePerShare || 0).toFixed(2)}`,
+                sentiment: isBuy ? "positive" : "negative",
+              });
+            }
+          } catch {}
+        }
+
+        // SEC 8-K filings
+        if (ticker.cik) {
+          try {
+            const filings = await getRecent8K(ticker.cik);
+            for (const f of filings.slice(0, 2)) {
+              signals.push({
+                source: "sec_filing",
+                title: `8-K Filed: ${f.description}`,
+                detail: `Filed ${f.filingDate}`,
+                sentiment: "neutral",
+              });
+            }
+          } catch {}
+        }
+
+        // News sentiment
+        try {
+          const news = await getCompanyNews(ticker.symbol, 3);
+          for (const n of news.slice(0, 3)) {
+            signals.push({
+              source: "news_sentiment",
+              title: n.title.slice(0, 120),
+              detail: n.summary.slice(0, 200),
+              sentiment: n.sentiment,
+            });
+          }
+        } catch {}
+
+        if (signals.length > 0) {
+          tickerSignals.set(ticker.symbol, signals);
+        }
+      })
+    );
+
+    if (Date.now() - startTime > 45000) break; // Safety: stop before 60s timeout
+  }
+
+  // 5. Run AI analysis on tickers with signals (max 12, parallel batches of 3)
+  const aiCandidates = [...tickerSignals.entries()]
+    .map(([symbol, signals]) => ({
+      symbol,
+      signals,
+      ticker: topTickers.find((t) => t.symbol === symbol)!,
+      quote: quotesMap.get(symbol),
+    }))
+    .filter((c) => c.quote?.price > 0)
+    .slice(0, 12);
+
+  for (const batch of chunkArray(aiCandidates, 3)) {
+    if (Date.now() - startTime > 50000) break;
+
+    await Promise.all(
+      batch.map(async (candidate) => {
+        try {
+          const analysts = await getAnalystRatings(candidate.symbol).catch(
+            () => null
+          );
+
+          const aiResult = await generateCall({
+            ticker: candidate.symbol,
+            company: candidate.ticker.company_name,
+            currentPrice: candidate.quote.price,
+            signals: candidate.signals,
+            analystConsensus: analysts
+              ? {
+                  buy: analysts.buy + analysts.strongBuy,
+                  hold: analysts.hold,
+                  sell: analysts.sell + analysts.strongSell,
+                  avgTarget: 0,
+                }
+              : undefined,
+          });
+
+          await storeIngestionResults(
+            candidate.symbol,
+            candidate.signals,
+            aiResult,
+            "gemini-2.5-flash"
+          );
+
+          results.push({
+            ticker: candidate.symbol,
+            status: "ok",
+            call: aiResult.call,
+            conviction: aiResult.conviction,
+            signalCount: candidate.signals.length,
+          });
+        } catch (err) {
+          results.push({
+            ticker: candidate.symbol,
+            status: "error",
+            error: err instanceof Error ? err.message : "Unknown error",
+          });
+        }
+      })
+    );
   }
 
   const okCount = results.filter((r) => r.status === "ok").length;
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   await logIngestion("full_pipeline", "success", okCount);
 
   return NextResponse.json({
     ingested: okCount,
-    skipped: results.filter((r) => r.status === "skip").length,
+    skipped: topTickers.length - results.length,
     errors: results.filter((r) => r.status === "error").length,
+    totalTickers: allTickers.length,
+    screened: topTickers.length,
+    elapsedSeconds: elapsed,
     results,
   });
 }
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));

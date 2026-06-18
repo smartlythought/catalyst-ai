@@ -7,6 +7,7 @@ import { callColor, formatPercent } from "@/lib/utils";
 import { Sparkline } from "@/components/sparkline";
 import { ConvictionMeter } from "@/components/conviction-meter";
 import { TabBar } from "@/components/tab-bar";
+import { Disclaimer } from "@/components/disclaimer";
 import type { Signal } from "@/lib/types";
 
 const signalTypeColors: Record<string, string> = {
@@ -284,6 +285,8 @@ export default function SignalDetailPage({
           +
         </button>
       </div>
+
+      <Disclaimer />
 
       <TabBar />
     </div>

@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { SignalsFeed } from "@/components/signals-feed";
 import { TabBar } from "@/components/tab-bar";
+import { Disclaimer } from "@/components/disclaimer";
 import { getActiveCalls } from "@/lib/supabase/queries";
 import { getBatchQuotes } from "@/lib/ingestion/market-data";
 import { MOCK_SIGNALS, getTodayDate } from "@/lib/mock-data";
@@ -11,9 +13,7 @@ export default async function HomePage() {
 
   if (signals.length > 0) {
     const tickers = [...new Set(signals.map((s) => s.ticker))];
-    const quotes = await getBatchQuotes(tickers).catch(
-      () => new Map()
-    );
+    const quotes = await getBatchQuotes(tickers).catch(() => new Map());
     for (const s of signals) {
       const q = quotes.get(s.ticker);
       if (q) {
@@ -32,9 +32,8 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-dvh pb-24">
-      {/* Header */}
       <header className="safe-top px-5 pb-4">
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center justify-between mb-3">
           <span className="text-[13px] text-text-muted font-medium">
             {getTodayDate()}
           </span>
@@ -45,6 +44,21 @@ export default async function HomePage() {
             </span>
           </div>
         </div>
+
+        {/* Search bar */}
+        <Link
+          href="/search"
+          className="flex items-center gap-2.5 h-[44px] rounded-[14px] border border-border-1 bg-surface-1 px-4 mb-4"
+        >
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+            <circle cx="8" cy="8" r="5.5" stroke="var(--text-faint)" strokeWidth="1.5" />
+            <path d="M12 12L16 16" stroke="var(--text-faint)" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <span className="text-[14px] text-text-faint">
+            Search any stock...
+          </span>
+        </Link>
+
         <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
           Today&apos;s calls
         </h1>
@@ -69,18 +83,15 @@ export default async function HomePage() {
             </span>
             <span className="text-[12px] text-text-muted font-medium">WATCH</span>
           </div>
+          <div className="ml-auto text-[12px] text-text-faint font-mono">
+            {signals.length} stocks
+          </div>
         </div>
       </header>
 
-      {/* Signal cards */}
       <SignalsFeed signals={signals} />
 
-      {/* Disclaimer */}
-      <div className="px-5 pt-6 pb-4">
-        <p className="text-[10px] text-text-faint font-mono tracking-[0.5px] uppercase text-center leading-relaxed">
-          Catalyst is research, not financial advice. You make the call.
-        </p>
-      </div>
+      <Disclaimer />
 
       <TabBar />
     </div>

@@ -4,6 +4,16 @@ import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { callColor, formatPercent, formatMarketCap } from "@/lib/utils";
 import { TabBar } from "@/components/tab-bar";
+import { Disclaimer } from "@/components/disclaimer";
+
+interface NewsItem {
+  title: string;
+  summary: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  sentiment: "positive" | "negative" | "neutral";
+}
 
 const eventDotColors: Record<string, string> = {
   INSIDER: "var(--pos-green)",
@@ -34,8 +44,10 @@ export default function StockDeepDivePage({
 }) {
   const { ticker } = use(params);
   const [data, setData] = useState<StockData | null>(null);
+  const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState("1M");
+  const [onWatchlist, setOnWatchlist] = useState(false);
 
   useEffect(() => {
     fetch(`/api/stock/${ticker}`)
@@ -43,7 +55,22 @@ export default function StockDeepDivePage({
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    fetch(`/api/news/${ticker}?days=5`)
+      .then((r) => r.json())
+      .then((d) => setNews(d.news || []))
+      .catch(() => {});
   }, [ticker]);
+
+  async function toggleWatchlist() {
+    const method = onWatchlist ? "DELETE" : "POST";
+    setOnWatchlist(!onWatchlist);
+    await fetch("/api/watchlist", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol: ticker.toUpperCase() }),
+    }).catch(() => setOnWatchlist(onWatchlist));
+  }
 
   const price = data?.quote?.price ?? 0;
   const change = data?.quote?.change ?? 0;
@@ -128,9 +155,21 @@ export default function StockDeepDivePage({
           >
             <span className="text-[18px]">&lsaquo;</span> Back
           </Link>
-          <span className="text-[12px] text-text-faint font-mono uppercase tracking-[1px]">
-            {exchange}
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={toggleWatchlist}
+              className={`text-[12px] font-medium px-3 py-1 rounded-full border ${
+                onWatchlist
+                  ? "bg-accent-brand/15 border-accent-brand/30 text-accent-brand"
+                  : "bg-surface-2 border-border-1 text-text-muted"
+              }`}
+            >
+              {onWatchlist ? "Watching" : "+ Watch"}
+            </button>
+            <span className="text-[12px] text-text-faint font-mono uppercase tracking-[1px]">
+              {exchange}
+            </span>
+          </div>
         </div>
         <div className="flex items-center justify-between">
           <div>
@@ -392,6 +431,53 @@ export default function StockDeepDivePage({
           </div>
         </div>
       )}
+
+      {/* News feed */}
+      {news.length > 0 && (
+        <div className="px-5 mb-5">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+            Latest news
+          </h2>
+          <div className="flex flex-col gap-2">
+            {news.slice(0, 6).map((item, i) => (
+              <a
+                key={i}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-surface-1 border border-border-1 rounded-[14px] p-3.5 block"
+              >
+                <div className="flex items-start gap-2 mb-1">
+                  <span
+                    className="w-[6px] h-[6px] rounded-full mt-1.5 flex-shrink-0"
+                    style={{
+                      backgroundColor:
+                        item.sentiment === "positive"
+                          ? "var(--pos-green)"
+                          : item.sentiment === "negative"
+                            ? "var(--neg-red)"
+                            : "var(--neutral-watch)",
+                    }}
+                  />
+                  <span className="text-[14px] font-semibold leading-tight line-clamp-2">
+                    {item.title}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 ml-[14px]">
+                  <span className="text-[11px] text-text-faint">
+                    {item.source}
+                  </span>
+                  <span className="text-[11px] text-text-faint">
+                    {new Date(item.publishedAt).toLocaleDateString()}
+                  </span>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Disclaimer />
 
       {/* Empty state */}
       {!data?.quote && !loading && (

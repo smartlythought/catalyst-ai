@@ -5,6 +5,10 @@
       "schedule": "0 13 * * 1-5"
     },
     {
+      "path": "/api/ingest/universe",
+      "schedule": "0 10 * * 1"
+    },
+    {
       "path": "/api/ingest/weekly-picks",
       "schedule": "0 18 * * 0"
     }

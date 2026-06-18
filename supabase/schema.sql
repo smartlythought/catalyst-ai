@@ -257,6 +257,25 @@ CREATE TABLE watchlist (
 );
 
 -- ============================================================
+-- NEWS_CACHE: Cached news articles per ticker
+-- ============================================================
+CREATE TABLE IF NOT EXISTS news_cache (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  ticker_id BIGINT REFERENCES tickers(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT,
+  url TEXT NOT NULL UNIQUE,
+  sentiment signal_sentiment DEFAULT 'neutral',
+  image_url TEXT,
+  published_at TIMESTAMPTZ NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_cache_ticker ON news_cache (ticker_id, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_cache_published ON news_cache (published_at DESC);
+
+-- ============================================================
 -- INGESTION_LOG: Track data pipeline runs
 -- ============================================================
 CREATE TABLE ingestion_log (
