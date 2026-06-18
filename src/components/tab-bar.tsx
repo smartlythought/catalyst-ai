@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const tabs = [
@@ -64,6 +66,18 @@ const tabs = [
 
 export function TabBar() {
   const pathname = usePathname();
+  const [user, setUser] = useState<{ email?: string } | null>(null);
+
+  useEffect(() => {
+    try {
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data }) => {
+        setUser(data.user ? { email: data.user.email || undefined } : null);
+      }).catch(() => {});
+    } catch {
+      // Supabase not configured
+    }
+  }, []);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-tab-bar-border bg-tab-bar-bg backdrop-blur-xl safe-bottom">
@@ -88,6 +102,39 @@ export function TabBar() {
             </Link>
           );
         })}
+
+        {/* Account */}
+        <Link
+          href={user ? "/account" : "/auth/login"}
+          className="flex flex-col items-center gap-0.5 px-4 py-1 text-tab-inactive"
+        >
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <circle
+              cx="11"
+              cy="8"
+              r="3.5"
+              stroke={
+                pathname.startsWith("/account") || pathname.startsWith("/auth")
+                  ? "var(--accent-brand)"
+                  : "var(--tab-inactive)"
+              }
+              strokeWidth="1.5"
+            />
+            <path
+              d="M4 18.5C4 15.46 6.46 13 9.5 13h3c3.04 0 5.5 2.46 5.5 5.5"
+              stroke={
+                pathname.startsWith("/account") || pathname.startsWith("/auth")
+                  ? "var(--accent-brand)"
+                  : "var(--tab-inactive)"
+              }
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+          <span className="text-[10px] font-medium">
+            {user ? "Account" : "Sign in"}
+          </span>
+        </Link>
       </div>
     </nav>
   );

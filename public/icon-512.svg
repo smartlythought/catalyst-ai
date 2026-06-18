@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112.64" fill="#0A0C10"/>
+  <circle cx="256" cy="256" r="194.56" fill="none" stroke="#E8743B" stroke-width="12.8"/>
+  <path d="M178.176 285.18399999999997 L246.272 148.992 L285.18399999999997 265.728 L343.552 187.904" fill="none" stroke="#E8743B" stroke-width="20.48" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="343.552" cy="187.904" r="15.36" fill="#16C784"/>
+  <text x="256" y="382.464" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="51.2" fill="#F2F3F5" letter-spacing="6.144">CATALYST</text>
+</svg>

@@ -1,9 +1,31 @@
 import { SignalsFeed } from "@/components/signals-feed";
 import { TabBar } from "@/components/tab-bar";
+import { getActiveCalls } from "@/lib/supabase/queries";
+import { getBatchQuotes } from "@/lib/ingestion/market-data";
 import { MOCK_SIGNALS, getTodayDate } from "@/lib/mock-data";
 
-export default function HomePage() {
-  const signals = MOCK_SIGNALS;
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  let signals = await getActiveCalls().catch(() => []);
+
+  if (signals.length > 0) {
+    const tickers = [...new Set(signals.map((s) => s.ticker))];
+    const quotes = await getBatchQuotes(tickers).catch(
+      () => new Map()
+    );
+    for (const s of signals) {
+      const q = quotes.get(s.ticker);
+      if (q) {
+        s.price = q.price;
+        s.change = q.change;
+        s.changePercent = q.changePercent;
+      }
+    }
+  } else {
+    signals = MOCK_SIGNALS;
+  }
+
   const buyCount = signals.filter((s) => s.call === "BUY").length;
   const reduceCount = signals.filter((s) => s.call === "REDUCE").length;
   const watchCount = signals.filter((s) => s.call === "WATCH").length;

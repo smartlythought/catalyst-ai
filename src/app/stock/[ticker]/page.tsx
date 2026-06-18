@@ -1,66 +1,9 @@
 "use client";
 
-import { use } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
-import { MOCK_SIGNALS } from "@/lib/mock-data";
 import { callColor, formatPercent, formatMarketCap } from "@/lib/utils";
 import { TabBar } from "@/components/tab-bar";
-
-const mockChartData = Array.from({ length: 30 }, (_, i) => ({
-  date: `Jun ${i + 1}`,
-  price: 165 + Math.random() * 12,
-}));
-
-const mockStats = {
-  marketCap: 2.12e12,
-  pe: 64.3,
-  week52Range: "$118.50 – $195.95",
-  avgVolume: "42.8M",
-};
-
-const mockEvents = [
-  {
-    date: "Jun 15",
-    type: "INSIDER",
-    title: "Director buys $2.4M in shares",
-    detail: "Mark Stevens purchased 14,000 shares at $171.50 avg",
-    sentiment: "positive" as const,
-  },
-  {
-    date: "Jun 12",
-    type: "UPGRADE",
-    title: "KeyBanc upgrades to Overweight",
-    detail: "Price target raised from $180 → $220",
-    sentiment: "positive" as const,
-  },
-  {
-    date: "Jun 10",
-    type: "OPTIONS",
-    title: "$12M in June 200C sweeps",
-    detail: "Block trades across multiple exchanges",
-    sentiment: "positive" as const,
-  },
-  {
-    date: "Jun 5",
-    type: "8-K",
-    title: "Blackwell production update",
-    detail: "Filed 8-K confirming expanded capacity",
-    sentiment: "positive" as const,
-  },
-  {
-    date: "May 28",
-    type: "EARNINGS",
-    title: "Q1 FY25 beat",
-    detail: "Revenue $26B vs $24.7B expected, +262% YoY",
-    sentiment: "positive" as const,
-  },
-];
-
-const mockInsiders = [
-  { name: "Mark Stevens", role: "Director", date: "Jun 15", action: "BUY" as const, amount: 2400000 },
-  { name: "Tench Coxe", role: "Director", date: "May 22", action: "BUY" as const, amount: 1800000 },
-  { name: "Colette Kress", role: "CFO", date: "Apr 10", action: "SELL" as const, amount: 5200000 },
-];
 
 const eventDotColors: Record<string, string> = {
   INSIDER: "var(--pos-green)",
@@ -72,8 +15,17 @@ const eventDotColors: Record<string, string> = {
   GUIDANCE: "var(--pos-green)",
   TECHNICAL: "var(--accent-brand)",
   NEWS: "var(--neutral-watch)",
-  UPCOMING: "var(--accent-brand)",
 };
+
+interface StockData {
+  symbol: string;
+  quote: any;
+  profile: any;
+  analysts: any;
+  prices: { date: string; close: number; volume: number }[];
+  insiderTrades: any[];
+  filings: any[];
+}
 
 export default function StockDeepDivePage({
   params,
@@ -81,44 +33,100 @@ export default function StockDeepDivePage({
   params: Promise<{ ticker: string }>;
 }) {
   const { ticker } = use(params);
-  const signal = MOCK_SIGNALS.find(
-    (s) => s.ticker.toLowerCase() === ticker.toLowerCase()
-  );
+  const [data, setData] = useState<StockData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState("1M");
 
-  const price = signal?.price ?? 172.35;
-  const change = signal?.change ?? 4.82;
-  const changePercent = signal?.changePercent ?? 2.88;
-  const company = signal?.company ?? ticker;
-  const exchange = signal?.exchange ?? "NASDAQ";
-  const color = signal ? callColor(signal.call) : "var(--pos-green)";
-  const changeColor = changePercent >= 0 ? "var(--pos-green-bright)" : "var(--neg-red-bright)";
+  useEffect(() => {
+    fetch(`/api/stock/${ticker}`)
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [ticker]);
 
-  const chartMin = Math.min(...mockChartData.map((d) => d.price));
-  const chartMax = Math.max(...mockChartData.map((d) => d.price));
-  const chartRange = chartMax - chartMin || 1;
+  const price = data?.quote?.price ?? 0;
+  const change = data?.quote?.change ?? 0;
+  const changePercent = data?.quote?.changePercent ?? 0;
+  const company = data?.profile?.name ?? ticker.toUpperCase();
+  const exchange = data?.profile?.exchange ?? "NASDAQ";
+  const changeColor =
+    changePercent >= 0 ? "var(--pos-green-bright)" : "var(--neg-red-bright)";
+  const color = changePercent >= 0 ? "var(--pos-green)" : "var(--neg-red)";
+
+  const chartData = (data?.prices || []).slice().reverse();
   const chartW = 340;
   const chartH = 160;
+  const chartMin = chartData.length
+    ? Math.min(...chartData.map((d) => d.close))
+    : 0;
+  const chartMax = chartData.length
+    ? Math.max(...chartData.map((d) => d.close))
+    : 1;
+  const chartRange = chartMax - chartMin || 1;
 
-  const chartPoints = mockChartData
+  const chartPoints = chartData
     .map((d, i) => {
-      const x = (i / (mockChartData.length - 1)) * chartW;
-      const y = chartH - ((d.price - chartMin) / chartRange) * (chartH - 20) - 10;
+      const x = (i / Math.max(chartData.length - 1, 1)) * chartW;
+      const y =
+        chartH - ((d.close - chartMin) / chartRange) * (chartH - 20) - 10;
       return `${x},${y}`;
     })
     .join(" ");
 
-  const areaPoints = `0,${chartH} ${chartPoints} ${chartW},${chartH}`;
+  const areaPoints =
+    chartData.length > 0
+      ? `0,${chartH} ${chartPoints} ${chartW},${chartH}`
+      : "";
+
+  const events = [
+    ...(data?.insiderTrades || []).slice(0, 3).map((t: any) => ({
+      date: t.filingDate,
+      type: "INSIDER",
+      title: `${t.filerRole || "Insider"} ${t.filerName} ${t.transactionType === "P" ? "buys" : "sells"}`,
+      detail: `${t.shares?.toLocaleString()} shares at $${t.pricePerShare?.toFixed(2)}`,
+      sentiment: t.transactionType === "P" ? "positive" : "negative",
+    })),
+    ...(data?.filings || []).slice(0, 3).map((f: any) => ({
+      date: f.filingDate,
+      type: "8-K",
+      title: f.description || "8-K Filing",
+      detail: `Filed ${f.filingDate}`,
+      sentiment: "neutral",
+    })),
+  ].sort((a, b) => (b.date > a.date ? 1 : -1));
+
+  const insiders = (data?.insiderTrades || []).slice(0, 5).map((t: any) => ({
+    name: t.filerName,
+    role: t.filerRole || "Insider",
+    date: t.filingDate || t.transactionDate,
+    action: t.transactionType === "P" ? "BUY" : "SELL",
+    amount: t.totalValue || t.shares * (t.pricePerShare || 0),
+  }));
+
+  const analysts = data?.analysts;
+  const buyCount = analysts ? analysts.buy + analysts.strongBuy : 0;
+  const holdCount = analysts?.hold ?? 0;
+  const sellCount = analysts ? analysts.sell + analysts.strongSell : 0;
+  const analystTotal = buyCount + holdCount + sellCount || 1;
+
+  if (loading) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-accent-brand border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-dvh pb-24">
-      {/* Header */}
       <header className="safe-top px-5 pb-4">
         <div className="flex items-center justify-between mb-3">
           <Link
-            href={signal ? `/signal/${signal.id}` : "/"}
+            href="/"
             className="text-[14px] text-accent-brand font-medium flex items-center gap-1"
           >
-            <span className="text-[18px]">&lsaquo;</span> Call
+            <span className="text-[18px]">&lsaquo;</span> Back
           </Link>
           <span className="text-[12px] text-text-faint font-mono uppercase tracking-[1px]">
             {exchange}
@@ -126,248 +134,276 @@ export default function StockDeepDivePage({
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-[30px] font-extrabold leading-none">{ticker}</h1>
+            <h1 className="text-[30px] font-extrabold leading-none">
+              {ticker.toUpperCase()}
+            </h1>
             <p className="text-[14px] text-text-muted mt-0.5">{company}</p>
           </div>
-          <div className="text-right">
-            <div className="font-mono text-[22px] font-bold">${price.toFixed(2)}</div>
-            <div className="font-mono text-[14px] font-medium" style={{ color: changeColor }}>
-              {change >= 0 ? "+" : ""}
-              {change.toFixed(2)} ({formatPercent(changePercent)})
+          {price > 0 && (
+            <div className="text-right">
+              <div className="font-mono text-[22px] font-bold">
+                ${price.toFixed(2)}
+              </div>
+              <div
+                className="font-mono text-[14px] font-medium"
+                style={{ color: changeColor }}
+              >
+                {change >= 0 ? "+" : ""}
+                {change.toFixed(2)} ({formatPercent(changePercent)})
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </header>
 
       {/* Price chart */}
-      <div className="px-5 mb-5">
-        <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
-          <svg
-            viewBox={`0 0 ${chartW} ${chartH}`}
-            className="w-full"
-            preserveAspectRatio="none"
-          >
-            <defs>
-              <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-                <stop offset="100%" stopColor={color} stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <polygon points={areaPoints} fill="url(#areaGrad)" />
-            <polyline
-              points={chartPoints}
-              stroke={color}
-              strokeWidth="2"
-              fill="none"
-              strokeLinecap="round"
-            />
-            {/* Reference lines (BUY only) */}
-            {signal?.entry && signal?.target && signal?.stop && (
-              <>
-                {[
-                  { val: signal.target, color: "var(--pos-green)", label: "Target" },
-                  { val: signal.entry, color: "var(--text-muted)", label: "Entry" },
-                  { val: signal.stop, color: "var(--neg-red)", label: "Stop" },
-                ].map((ref) => {
-                  const y =
-                    chartH - ((ref.val - chartMin) / chartRange) * (chartH - 20) - 10;
-                  return (
-                    <g key={ref.label}>
-                      <line
-                        x1="0"
-                        y1={y}
-                        x2={chartW}
-                        y2={y}
-                        stroke={ref.color}
-                        strokeWidth="1"
-                        strokeDasharray="4 3"
-                        opacity="0.6"
-                      />
-                      <text
-                        x={chartW - 2}
-                        y={y - 4}
-                        fill={ref.color}
-                        fontSize="9"
-                        textAnchor="end"
-                        fontFamily="IBM Plex Mono"
-                      >
-                        {ref.label} ${ref.val}
-                      </text>
-                    </g>
-                  );
-                })}
-              </>
-            )}
-          </svg>
+      {chartData.length > 1 && (
+        <div className="px-5 mb-5">
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
+            <svg
+              viewBox={`0 0 ${chartW} ${chartH}`}
+              className="w-full"
+              preserveAspectRatio="none"
+            >
+              <defs>
+                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <polygon points={areaPoints} fill="url(#areaGrad)" />
+              <polyline
+                points={chartPoints}
+                stroke={color}
+                strokeWidth="2"
+                fill="none"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="flex items-center gap-2 mt-3">
+              {["1W", "1M", "3M", "1Y"].map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRange(r)}
+                  className={`font-mono text-[11px] font-medium px-3 py-1 rounded-md ${
+                    range === r
+                      ? "bg-accent-brand/15 text-accent-brand"
+                      : "text-text-muted"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-          {/* Range chips */}
-          <div className="flex items-center gap-2 mt-3">
-            {["1W", "1M", "3M", "1Y"].map((range) => (
-              <button
-                key={range}
-                className={`font-mono text-[11px] font-medium px-3 py-1 rounded-md ${
-                  range === "1M"
-                    ? "bg-accent-brand/15 text-accent-brand"
-                    : "text-text-muted"
-                }`}
+      {/* Key stats */}
+      {data?.profile && (
+        <div className="px-5 mb-5">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+            Key stats
+          </h2>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              {
+                label: "Mkt cap",
+                value: data.profile.marketCap
+                  ? formatMarketCap(data.profile.marketCap)
+                  : "—",
+              },
+              {
+                label: "P/E",
+                value: data.profile.pe ? data.profile.pe.toFixed(1) : "—",
+              },
+              {
+                label: "52-wk range",
+                value:
+                  data.profile.week52Low && data.profile.week52High
+                    ? `$${data.profile.week52Low.toFixed(0)} – $${data.profile.week52High.toFixed(0)}`
+                    : "—",
+              },
+              {
+                label: "Avg volume",
+                value: data.profile.avgVolume
+                  ? `${(data.profile.avgVolume / 1e6).toFixed(1)}M`
+                  : "—",
+              },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="bg-surface-1 border border-border-1 rounded-[14px] p-3"
               >
-                {range}
-              </button>
+                <div className="text-[11px] text-text-muted mb-1">
+                  {stat.label}
+                </div>
+                <div className="font-mono text-[15px] font-semibold">
+                  {stat.value}
+                </div>
+              </div>
             ))}
           </div>
         </div>
-      </div>
-
-      {/* Key stats */}
-      <div className="px-5 mb-5">
-        <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
-          Key stats
-        </h2>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { label: "Mkt cap", value: formatMarketCap(mockStats.marketCap) },
-            { label: "P/E", value: mockStats.pe.toFixed(1) },
-            { label: "52-wk range", value: mockStats.week52Range },
-            { label: "Avg volume", value: mockStats.avgVolume },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              className="bg-surface-1 border border-border-1 rounded-[14px] p-3"
-            >
-              <div className="text-[11px] text-text-muted mb-1">{stat.label}</div>
-              <div className="font-mono text-[15px] font-semibold">{stat.value}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Catalyst timeline */}
-      <div className="px-5 mb-5">
-        <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
-          Catalyst timeline
-        </h2>
-        <div className="flex flex-col">
-          {mockEvents.map((event, i) => (
-            <div key={i} className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <div
-                  className="w-[8px] h-[8px] rounded-full mt-1.5"
-                  style={{
-                    backgroundColor:
-                      eventDotColors[event.type] || "var(--neutral-watch)",
-                  }}
-                />
-                {i < mockEvents.length - 1 && (
-                  <div className="w-px flex-1 bg-border-hairline mt-1" />
-                )}
-              </div>
-              <div className="flex-1 pb-4">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="font-mono text-[10px] text-text-faint">
-                    {event.date}
-                  </span>
-                  <span className="font-mono text-[9px] font-medium tracking-[0.5px] uppercase text-text-faint px-1.5 py-0.5 rounded bg-chip-bg border border-chip-border">
-                    {event.type}
-                  </span>
+      {events.length > 0 && (
+        <div className="px-5 mb-5">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+            Catalyst timeline
+          </h2>
+          <div className="flex flex-col">
+            {events.map((event, i) => (
+              <div key={i} className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <div
+                    className="w-[8px] h-[8px] rounded-full mt-1.5"
+                    style={{
+                      backgroundColor:
+                        eventDotColors[event.type] || "var(--neutral-watch)",
+                    }}
+                  />
+                  {i < events.length - 1 && (
+                    <div className="w-px flex-1 bg-border-hairline mt-1" />
+                  )}
                 </div>
-                <div className="text-[14px] font-semibold">{event.title}</div>
-                <div className="text-[13px] text-text-muted mt-0.5">
-                  {event.detail}
+                <div className="flex-1 pb-4">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-mono text-[10px] text-text-faint">
+                      {event.date}
+                    </span>
+                    <span className="font-mono text-[9px] font-medium tracking-[0.5px] uppercase text-text-faint px-1.5 py-0.5 rounded bg-chip-bg border border-chip-border">
+                      {event.type}
+                    </span>
+                  </div>
+                  <div className="text-[14px] font-semibold">{event.title}</div>
+                  <div className="text-[13px] text-text-muted mt-0.5">
+                    {event.detail}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Stakeholder movements */}
-      <div className="px-5 mb-5">
-        <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
-          Stakeholder movements
-        </h2>
-        <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden">
-          {mockInsiders.map((insider, i) => (
-            <div
-              key={i}
-              className={`flex items-center gap-3 px-4 py-3.5 ${
-                i < mockInsiders.length - 1
-                  ? "border-b border-border-hairline"
-                  : ""
-              }`}
-            >
-              <div className="w-[36px] h-[36px] rounded-full bg-surface-2 border border-border-1 flex items-center justify-center text-[13px] font-bold text-text-muted">
-                {insider.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")}
-              </div>
-              <div className="flex-1">
-                <div className="text-[14px] font-semibold">{insider.name}</div>
-                <div className="text-[12px] text-text-muted">
-                  {insider.role} &middot; {insider.date}
+      {insiders.length > 0 && (
+        <div className="px-5 mb-5">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+            Stakeholder movements
+          </h2>
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden">
+            {insiders.map((insider: any, i: number) => (
+              <div
+                key={i}
+                className={`flex items-center gap-3 px-4 py-3.5 ${
+                  i < insiders.length - 1
+                    ? "border-b border-border-hairline"
+                    : ""
+                }`}
+              >
+                <div className="w-[36px] h-[36px] rounded-full bg-surface-2 border border-border-1 flex items-center justify-center text-[13px] font-bold text-text-muted">
+                  {insider.name
+                    .split(" ")
+                    .map((n: string) => n[0])
+                    .join("")}
+                </div>
+                <div className="flex-1">
+                  <div className="text-[14px] font-semibold">{insider.name}</div>
+                  <div className="text-[12px] text-text-muted">
+                    {insider.role} &middot; {insider.date}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div
+                    className="font-mono text-[13px] font-bold"
+                    style={{
+                      color:
+                        insider.action === "BUY"
+                          ? "var(--pos-green)"
+                          : "var(--neg-red)",
+                    }}
+                  >
+                    {insider.action}
+                  </div>
+                  {insider.amount > 0 && (
+                    <div className="font-mono text-[12px] text-text-secondary">
+                      ${insider.amount >= 1e6
+                        ? `${(insider.amount / 1e6).toFixed(1)}M`
+                        : `${(insider.amount / 1e3).toFixed(0)}K`}
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="text-right">
-                <div
-                  className="font-mono text-[13px] font-bold"
-                  style={{
-                    color:
-                      insider.action === "BUY"
-                        ? "var(--pos-green)"
-                        : "var(--neg-red)",
-                  }}
-                >
-                  {insider.action}
-                </div>
-                <div className="font-mono text-[12px] text-text-secondary">
-                  ${(insider.amount / 1e6).toFixed(1)}M
-                </div>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Analyst consensus */}
-      <div className="px-5 mb-5">
-        <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
-          Analyst consensus
-        </h2>
-        <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
-          {/* Segmented bar */}
-          <div className="flex h-[8px] rounded-full overflow-hidden mb-3">
-            <div className="bg-pos-green" style={{ width: "68%" }} />
-            <div className="bg-neutral-watch" style={{ width: "24%" }} />
-            <div className="bg-neg-red" style={{ width: "8%" }} />
-          </div>
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-center">
-              <div className="font-mono text-[16px] font-bold text-pos-green">
-                34
-              </div>
-              <div className="text-[10px] text-text-muted">Buy</div>
+      {analysts && (
+        <div className="px-5 mb-5">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+            Analyst consensus
+          </h2>
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
+            <div className="flex h-[8px] rounded-full overflow-hidden mb-3">
+              <div
+                className="bg-pos-green"
+                style={{
+                  width: `${(buyCount / analystTotal) * 100}%`,
+                }}
+              />
+              <div
+                className="bg-neutral-watch"
+                style={{
+                  width: `${(holdCount / analystTotal) * 100}%`,
+                }}
+              />
+              <div
+                className="bg-neg-red"
+                style={{
+                  width: `${(sellCount / analystTotal) * 100}%`,
+                }}
+              />
             </div>
-            <div className="text-center">
-              <div className="font-mono text-[16px] font-bold text-neutral-watch">
-                12
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-center">
+                <div className="font-mono text-[16px] font-bold text-pos-green">
+                  {buyCount}
+                </div>
+                <div className="text-[10px] text-text-muted">Buy</div>
               </div>
-              <div className="text-[10px] text-text-muted">Hold</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-[16px] font-bold text-neg-red">
-                4
+              <div className="text-center">
+                <div className="font-mono text-[16px] font-bold text-neutral-watch">
+                  {holdCount}
+                </div>
+                <div className="text-[10px] text-text-muted">Hold</div>
               </div>
-              <div className="text-[10px] text-text-muted">Sell</div>
+              <div className="text-center">
+                <div className="font-mono text-[16px] font-bold text-neg-red">
+                  {sellCount}
+                </div>
+                <div className="text-[10px] text-text-muted">Sell</div>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center justify-between pt-3 border-t border-border-hairline">
-            <span className="text-[12px] text-text-muted">Avg price target</span>
-            <span className="font-mono text-[16px] font-bold text-accent-brand">
-              $205.00
-            </span>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Empty state */}
+      {!data?.quote && !loading && (
+        <div className="px-5 py-12 text-center">
+          <p className="text-text-muted text-[14px]">
+            No market data available for {ticker.toUpperCase()}.
+          </p>
+          <p className="text-text-faint text-[12px] mt-1">
+            Data populates after the daily ingestion runs.
+          </p>
+        </div>
+      )}
 
       <TabBar />
     </div>

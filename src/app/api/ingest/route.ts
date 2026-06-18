@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRecentForm4, getRecent8K } from "@/lib/ingestion/sec-edgar";
 import { getQuote, getAnalystRatings } from "@/lib/ingestion/market-data";
 import { generateCall } from "@/lib/ai/gemini";
+import {
+  storeIngestionResults,
+  storeInsiderTrade,
+  logIngestion,
+} from "@/lib/supabase/queries";
 
 const TRACKED_TICKERS = [
   { symbol: "NVDA", cik: "1045810", company: "NVIDIA Corporation" },
@@ -21,11 +26,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  await logIngestion("full_pipeline", "running", 0);
   const results = [];
 
   for (const ticker of TRACKED_TICKERS) {
     try {
-      // 1. Fetch signals from multiple sources in parallel
       const [form4s, filings8k, quote, analysts] = await Promise.all([
         getRecentForm4(ticker.cik).catch(() => []),
         getRecent8K(ticker.cik).catch(() => []),
@@ -34,11 +39,29 @@ export async function POST(request: NextRequest) {
       ]);
 
       if (!quote) {
-        results.push({ ticker: ticker.symbol, status: "skip", reason: "no quote" });
+        results.push({
+          ticker: ticker.symbol,
+          status: "skip",
+          reason: "no quote",
+        });
         continue;
       }
 
-      // 2. Build signal inputs for AI
+      for (const f4 of form4s.slice(0, 5)) {
+        await storeInsiderTrade(ticker.symbol, {
+          filerName: f4.filerName,
+          filerRole: f4.filerRole,
+          tradeType: f4.transactionType,
+          shares: f4.shares,
+          pricePerShare: f4.pricePerShare,
+          totalValue: f4.totalValue,
+          sharesOwnedAfter: f4.sharesOwnedAfter,
+          filingDate: f4.filingDate,
+          transactionDate: f4.transactionDate,
+          accessionNumber: f4.accessionNumber,
+        });
+      }
+
       const signals: {
         source: string;
         title: string;
@@ -66,11 +89,14 @@ export async function POST(request: NextRequest) {
       }
 
       if (signals.length === 0) {
-        results.push({ ticker: ticker.symbol, status: "skip", reason: "no signals" });
+        results.push({
+          ticker: ticker.symbol,
+          status: "skip",
+          reason: "no signals",
+        });
         continue;
       }
 
-      // 3. Generate AI call
       const aiResult = await generateCall({
         ticker: ticker.symbol,
         company: ticker.company,
@@ -86,6 +112,13 @@ export async function POST(request: NextRequest) {
           : undefined,
       });
 
+      await storeIngestionResults(
+        ticker.symbol,
+        signals,
+        aiResult,
+        "gemini-2.5-flash"
+      );
+
       results.push({
         ticker: ticker.symbol,
         status: "ok",
@@ -94,11 +127,6 @@ export async function POST(request: NextRequest) {
         signalCount: signals.length,
       });
 
-      // TODO: Store in Supabase
-      // const supabase = createServiceClient();
-      // await supabase.from('calls').insert({ ... });
-
-      // Rate limit between tickers
       await new Promise((r) => setTimeout(r, 2000));
     } catch (err) {
       results.push({
@@ -109,8 +137,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const okCount = results.filter((r) => r.status === "ok").length;
+  await logIngestion("full_pipeline", "success", okCount);
+
   return NextResponse.json({
-    ingested: results.filter((r) => r.status === "ok").length,
+    ingested: okCount,
     skipped: results.filter((r) => r.status === "skip").length,
     errors: results.filter((r) => r.status === "error").length,
     results,

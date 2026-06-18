@@ -1,16 +1,75 @@
 "use client";
 
-import { MOCK_HOLDINGS } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { formatPercent } from "@/lib/utils";
 import { Sparkline } from "@/components/sparkline";
 import { TabBar } from "@/components/tab-bar";
+import { MOCK_HOLDINGS } from "@/lib/mock-data";
+import type { Holding } from "@/lib/types";
 
 export default function PortfolioPage() {
-  const holdings = MOCK_HOLDINGS;
+  const [holdings, setHoldings] = useState<Holding[]>(MOCK_HOLDINGS);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data } = await supabase
+          .from("portfolio")
+          .select(
+            `
+            shares,
+            avg_cost,
+            tickers!inner (symbol, company_name)
+          `
+          )
+          .eq("user_id", user.id);
+
+        if (data && data.length > 0) {
+          setHoldings(
+            data.map((row: any) => ({
+              ticker: row.tickers.symbol,
+              company: row.tickers.company_name,
+              shares: row.shares,
+              avgCost: row.avg_cost,
+              currentPrice: row.avg_cost,
+              change: 0,
+              changePercent: 0,
+              totalValue: row.shares * row.avg_cost,
+              pnl: 0,
+              pnlPercent: 0,
+              hasActiveSignal: false,
+              sparkline: [],
+            }))
+          );
+        }
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
   const totalValue = holdings.reduce((sum, h) => sum + h.totalValue, 0);
   const totalPnl = holdings.reduce((sum, h) => sum + h.pnl, 0);
-  const totalPnlPercent = (totalPnl / (totalValue - totalPnl)) * 100;
+  const totalPnlPercent =
+    totalValue - totalPnl > 0
+      ? (totalPnl / (totalValue - totalPnl)) * 100
+      : 0;
   const activeSignals = holdings.filter((h) => h.hasActiveSignal).length;
+
+  if (loading) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-accent-brand border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-dvh pb-24">
@@ -32,8 +91,13 @@ export default function PortfolioPage() {
           <div className="font-mono text-[33px] font-semibold tracking-tight">
             ${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
           </div>
-          <div className="font-mono text-[15px] font-medium text-pos-green mt-1">
-            +${totalPnl.toFixed(2)} ({formatPercent(totalPnlPercent)})
+          <div
+            className={`font-mono text-[15px] font-medium mt-1 ${
+              totalPnl >= 0 ? "text-pos-green" : "text-neg-red"
+            }`}
+          >
+            {totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(2)} (
+            {formatPercent(totalPnlPercent)})
           </div>
           <div className="flex items-center gap-6 mt-4 pt-3 border-t border-border-hairline">
             <div>
@@ -66,12 +130,16 @@ export default function PortfolioPage() {
         <div className="flex flex-col">
           {holdings.map((h, i) => {
             const changeColor =
-              h.pnlPercent >= 0 ? "var(--pos-green-bright)" : "var(--neg-red-bright)";
+              h.pnlPercent >= 0
+                ? "var(--pos-green-bright)"
+                : "var(--neg-red-bright)";
             return (
               <div
                 key={h.ticker}
                 className={`flex items-center gap-3 py-3.5 ${
-                  i < holdings.length - 1 ? "border-b border-border-hairline" : ""
+                  i < holdings.length - 1
+                    ? "border-b border-border-hairline"
+                    : ""
                 }`}
               >
                 <div className="flex-1 min-w-0">
@@ -85,12 +153,22 @@ export default function PortfolioPage() {
                     {h.shares} shares
                   </span>
                 </div>
-                <Sparkline data={h.sparkline} color={changeColor} width={56} height={22} />
+                {h.sparkline.length > 0 && (
+                  <Sparkline
+                    data={h.sparkline}
+                    color={changeColor}
+                    width={56}
+                    height={22}
+                  />
+                )}
                 <div className="text-right">
                   <div className="font-mono text-[14px] font-medium">
                     ${h.currentPrice.toFixed(2)}
                   </div>
-                  <div className="font-mono text-[12px] font-medium" style={{ color: changeColor }}>
+                  <div
+                    className="font-mono text-[12px] font-medium"
+                    style={{ color: changeColor }}
+                  >
                     {formatPercent(h.pnlPercent)}
                   </div>
                 </div>

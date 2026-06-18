@@ -1,12 +1,13 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { MOCK_SIGNALS } from "@/lib/mock-data";
 import { callColor, formatPercent } from "@/lib/utils";
 import { Sparkline } from "@/components/sparkline";
 import { ConvictionMeter } from "@/components/conviction-meter";
 import { TabBar } from "@/components/tab-bar";
+import type { Signal } from "@/lib/types";
 
 const signalTypeColors: Record<string, string> = {
   INSIDER_BUY: "var(--pos-green)",
@@ -27,8 +28,32 @@ export default function SignalDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const signal = MOCK_SIGNALS.find((s) => s.id === id);
+  const [signal, setSignal] = useState<Signal | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`/api/signals`);
+        const data = await res.json();
+        const found = data.signals?.find((s: Signal) => s.id === id);
+        setSignal(found || MOCK_SIGNALS.find((s) => s.id === id) || null);
+      } catch {
+        setSignal(MOCK_SIGNALS.find((s) => s.id === id) || null);
+      }
+      setLoading(false);
+    }
+    load();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-accent-brand border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!signal) {
     return (
@@ -119,7 +144,6 @@ export default function SignalDetailPage({
             <Sparkline data={signal.sparkline} color={color} width={48} height={20} />
           </div>
 
-          {/* Price blocks (only for BUY calls with entry/target/stop) */}
           {signal.entry && signal.target && signal.stop ? (
             <>
               <div className="flex gap-2 mb-3">
@@ -156,7 +180,6 @@ export default function SignalDetailPage({
                 </div>
               </div>
 
-              {/* Risk:Reward */}
               {signal.riskReward && (
                 <div className="flex items-center justify-between pt-3 border-t border-border-hairline">
                   <span className="text-[12px] text-text-muted">Risk : Reward</span>
@@ -247,9 +270,16 @@ export default function SignalDetailPage({
 
       {/* Actions */}
       <div className="px-5 flex gap-3">
-        <button className="flex-1 h-[52px] rounded-[14px] bg-accent-brand text-white font-bold text-[15px] shadow-[0_8px_22px_rgba(232,116,59,0.28)]">
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(
+            `${signal.call} ${signal.ticker} @ $${signal.price.toFixed(2)} | Conviction ${signal.conviction}% | ${signal.why}`
+          )}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 h-[52px] rounded-[14px] bg-accent-brand text-white font-bold text-[15px] shadow-[0_8px_22px_rgba(232,116,59,0.28)] flex items-center justify-center"
+        >
           Send to WhatsApp
-        </button>
+        </a>
         <button className="w-[52px] h-[52px] rounded-[14px] border border-border-1 bg-surface-1 flex items-center justify-center text-[22px] text-text-muted">
           +
         </button>
