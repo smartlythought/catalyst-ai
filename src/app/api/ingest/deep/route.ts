@@ -9,6 +9,7 @@ import {
   storeInsiderTrade,
   logIngestion,
 } from "@/lib/supabase/queries";
+import { dispatchSignalAlerts } from "@/lib/whatsapp";
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
@@ -182,12 +183,27 @@ export async function POST(request: NextRequest) {
         "gemini-2.5-flash"
       );
 
+      let whatsappSent = 0;
+      if (aiResult.call !== "WATCH" && aiResult.conviction >= 65) {
+        whatsappSent = await dispatchSignalAlerts({
+          ticker: ticker.symbol,
+          call: aiResult.call,
+          conviction: aiResult.conviction,
+          price: quote.price,
+          entry: aiResult.entryPrice ?? undefined,
+          target: aiResult.targetPrice ?? undefined,
+          stop: aiResult.stopPrice ?? undefined,
+          why: aiResult.why,
+        }).catch(() => 0);
+      }
+
       processResults.push({
         ticker: ticker.symbol,
         status: "ok",
         call: aiResult.call,
         conviction: aiResult.conviction,
         signalCount: signals.length,
+        whatsappSent,
       });
     } catch (err) {
       processResults.push({

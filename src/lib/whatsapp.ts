@@ -1,3 +1,5 @@
+import { createServiceClient } from "@/lib/supabase/server";
+
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || "";
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID || "";
 const GRAPH_API = "https://graph.facebook.com/v19.0";
@@ -13,26 +15,8 @@ interface SignalMessage {
   why: string;
 }
 
-export async function sendSignalToWhatsApp(
-  phoneNumber: string,
-  signal: SignalMessage
-): Promise<boolean> {
+async function sendWhatsAppMessage(phoneNumber: string, body: string): Promise<boolean> {
   if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID) return false;
-
-  const emoji =
-    signal.call === "BUY" ? "🟢" : signal.call === "REDUCE" ? "🔴" : "⚪";
-
-  let body = `${emoji} *${signal.call} ${signal.ticker}* @ $${signal.price.toFixed(2)}\n`;
-  body += `Conviction: ${signal.conviction}%\n\n`;
-
-  if (signal.entry && signal.target && signal.stop) {
-    body += `Entry: $${signal.entry.toFixed(2)}\n`;
-    body += `Target: $${signal.target.toFixed(2)}\n`;
-    body += `Stop: $${signal.stop.toFixed(2)}\n\n`;
-  }
-
-  body += `${signal.why}\n\n`;
-  body += `_Catalyst AI — Not financial advice_`;
 
   const cleanPhone = phoneNumber.replace(/[^0-9]/g, "");
 
@@ -60,12 +44,32 @@ export async function sendSignalToWhatsApp(
   }
 }
 
+export async function sendSignalToWhatsApp(
+  phoneNumber: string,
+  signal: SignalMessage
+): Promise<boolean> {
+  const emoji =
+    signal.call === "BUY" ? "🟢" : signal.call === "REDUCE" ? "🔴" : "⚪";
+
+  let body = `${emoji} *${signal.call} ${signal.ticker}* @ $${signal.price.toFixed(2)}\n`;
+  body += `Conviction: ${signal.conviction}%\n\n`;
+
+  if (signal.entry && signal.target && signal.stop) {
+    body += `Entry: $${signal.entry.toFixed(2)}\n`;
+    body += `Target: $${signal.target.toFixed(2)}\n`;
+    body += `Stop: $${signal.stop.toFixed(2)}\n\n`;
+  }
+
+  body += `${signal.why}\n\n`;
+  body += `_Catalyst AI — Not financial advice_`;
+
+  return sendWhatsAppMessage(phoneNumber, body);
+}
+
 export async function sendWeeklyDigest(
   phoneNumber: string,
   picks: { shortTerm: string[]; longTerm: string[]; summary: string }
 ): Promise<boolean> {
-  if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID) return false;
-
   let body = `📊 *Catalyst Weekly Picks*\n\n`;
   body += `*Short-term (1-4 weeks):*\n`;
   picks.shortTerm.forEach((t, i) => {
@@ -78,28 +82,43 @@ export async function sendWeeklyDigest(
   body += `\n${picks.summary}\n\n`;
   body += `_Catalyst AI — Not financial advice_`;
 
-  const cleanPhone = phoneNumber.replace(/[^0-9]/g, "");
+  return sendWhatsAppMessage(phoneNumber, body);
+}
 
-  try {
-    const res = await fetch(
-      `${GRAPH_API}/${WHATSAPP_PHONE_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: cleanPhone,
-          type: "text",
-          text: { body },
-        }),
-      }
-    );
+/**
+ * Dispatch a new AI signal to all users who have WhatsApp enabled
+ * and whose min_conviction threshold is met.
+ */
+export async function dispatchSignalAlerts(signal: SignalMessage): Promise<number> {
+  if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID) return 0;
 
-    return res.ok;
-  } catch {
-    return false;
+  const supabase = createServiceClient();
+
+  const { data: subscribers } = await supabase
+    .from("user_alerts")
+    .select("user_id, min_conviction")
+    .eq("whatsapp_enabled", true);
+
+  if (!subscribers?.length) return 0;
+
+  const eligible = subscribers.filter(
+    (s: { user_id: string; min_conviction: number }) =>
+      signal.conviction >= (s.min_conviction || 70)
+  );
+
+  let sent = 0;
+  for (const sub of eligible) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("whatsapp_number")
+      .eq("id", sub.user_id)
+      .single();
+
+    if (profile?.whatsapp_number) {
+      const ok = await sendSignalToWhatsApp(profile.whatsapp_number, signal);
+      if (ok) sent++;
+    }
   }
+
+  return sent;
 }
