@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 
-const FMP_KEY = process.env.FMP_API_KEY || "";
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -10,170 +10,157 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!FMP_KEY) {
-    return NextResponse.json(
-      { error: "FMP_API_KEY not configured" },
-      { status: 500 }
-    );
-  }
-
   const startTime = Date.now();
   const supabase = createServiceClient();
   let inserted = 0;
-  let updated = 0;
   let skipped = 0;
 
-  // 1. Fetch ALL US-traded stocks from FMP
-  let allStocks: any[] = [];
-  try {
-    const res = await fetch(
-      `https://financialmodelingprep.com/api/v3/stock/list?apikey=${FMP_KEY}`
-    );
-    if (res.ok) {
-      const raw = await res.json();
-      allStocks = (raw || []).filter(
-        (s: any) =>
-          s.symbol &&
-          s.name &&
-          s.exchangeShortName &&
-          ["NASDAQ", "NYSE", "AMEX"].includes(s.exchangeShortName) &&
-          s.type === "stock" &&
-          (s.price === undefined || s.price >= 1)
+  // 1. Fetch ALL US symbols from Finnhub (30K+)
+  let finnhubSymbols: any[] = [];
+  if (FINNHUB_KEY) {
+    try {
+      const res = await fetch(
+        `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_KEY}`
       );
-    }
-  } catch (e) {
-    return NextResponse.json(
-      { error: `FMP stock/list failed: ${e}` },
-      { status: 502 }
-    );
-  }
-
-  if (allStocks.length === 0) {
-    return NextResponse.json(
-      { error: "FMP returned 0 US stocks" },
-      { status: 502 }
-    );
-  }
-
-  // 2. Batch upsert into Supabase (chunks of 100 for upsert)
-  const chunks = chunkArray(allStocks, 100);
-
-  for (const chunk of chunks) {
-    if (Date.now() - startTime > 50000) break; // safety for 60s timeout
-
-    const rows = chunk.map((s: any) => ({
-      symbol: s.symbol,
-      company_name: s.name.slice(0, 200),
-      exchange: s.exchangeShortName,
-    }));
-
-    const { data: existingRows } = await supabase
-      .from("tickers")
-      .select("symbol")
-      .in(
-        "symbol",
-        rows.map((r: any) => r.symbol)
-      );
-
-    const existingSet = new Set(
-      (existingRows || []).map((r: any) => r.symbol)
-    );
-
-    const toInsert = rows.filter((r: any) => !existingSet.has(r.symbol));
-    const toUpdate = rows.filter((r: any) => existingSet.has(r.symbol));
-
-    if (toInsert.length > 0) {
-      const { error } = await supabase.from("tickers").insert(toInsert);
-      if (!error) {
-        inserted += toInsert.length;
-      } else {
-        // Fallback: insert one by one to skip duplicates
-        for (const row of toInsert) {
-          const { error: e2 } = await supabase.from("tickers").insert(row);
-          if (!e2) inserted++;
-          else skipped++;
-        }
+      if (res.ok) {
+        finnhubSymbols = await res.json();
       }
-    }
-
-    for (const row of toUpdate) {
-      await supabase
-        .from("tickers")
-        .update({ company_name: row.company_name, exchange: row.exchange })
-        .eq("symbol", row.symbol);
-      updated++;
-    }
+    } catch {}
   }
 
-  // 3. Enrich with sector/industry data from FMP profiles (top 500 by market cap)
+  if (finnhubSymbols.length === 0) {
+    return NextResponse.json(
+      { error: "Finnhub returned 0 symbols. Check FINNHUB_API_KEY." },
+      { status: 502 }
+    );
+  }
+
+  // Filter for common stocks on major exchanges (NASDAQ, NYSE, AMEX)
+  const MAJOR_MICS = new Set(["XNAS", "XNYS", "XASE", "ARCX", "BATS"]);
+  const STOCK_TYPES = new Set(["Common Stock", "EQS"]);
+
+  const usStocks = finnhubSymbols.filter(
+    (s: any) =>
+      s.symbol &&
+      s.description &&
+      !s.symbol.includes(".") &&
+      !s.symbol.includes("-") &&
+      s.symbol.length <= 5 &&
+      MAJOR_MICS.has(s.mic) &&
+      STOCK_TYPES.has(s.type)
+  );
+
+  // 2. Fetch SEC EDGAR tickers for CIK mapping
+  const cikMap = new Map<string, { cik: string; name: string; exchange: string }>();
   try {
     const res = await fetch(
-      `https://financialmodelingprep.com/api/v3/stock-screener?marketCapMoreThan=2000000000&exchange=NYSE,NASDAQ&limit=500&apikey=${FMP_KEY}`
+      "https://www.sec.gov/files/company_tickers_exchange.json",
+      {
+        headers: {
+          "User-Agent":
+            process.env.SEC_EDGAR_USER_AGENT ||
+            "Catalyst research@catalyst.claudeo.ai",
+        },
+      }
     );
     if (res.ok) {
-      const screened = await res.json();
-      for (const s of screened || []) {
-        if (s.symbol && (s.sector || s.industry)) {
-          await supabase
-            .from("tickers")
-            .update({
-              sector: s.sector || null,
-              industry: s.industry || null,
-              market_cap: s.marketCap || null,
-            })
-            .eq("symbol", s.symbol);
-        }
+      const data = await res.json();
+      for (const row of data.data || []) {
+        // fields: [cik, name, ticker, exchange]
+        cikMap.set(row[2], {
+          cik: String(row[0]),
+          name: row[1],
+          exchange: row[3] || "",
+        });
       }
     }
   } catch {}
 
-  // 4. Backfill CIK numbers from SEC EDGAR
+  // 3. Get existing symbols to avoid redundant upserts
+  const { data: existingTickers } = await supabase
+    .from("tickers")
+    .select("symbol");
+  const existingSet = new Set(
+    (existingTickers || []).map((t: any) => t.symbol)
+  );
+
+  // 4. Batch insert new tickers
+  const toInsert: any[] = [];
+  for (const stock of usStocks) {
+    if (existingSet.has(stock.symbol)) {
+      skipped++;
+      continue;
+    }
+
+    const sec = cikMap.get(stock.symbol);
+    const exchangeName =
+      stock.mic === "XNAS"
+        ? "NASDAQ"
+        : stock.mic === "XNYS"
+          ? "NYSE"
+          : stock.mic === "XASE"
+            ? "AMEX"
+            : "NYSE";
+
+    toInsert.push({
+      symbol: stock.symbol,
+      company_name: (sec?.name || stock.description || stock.symbol).slice(
+        0,
+        200
+      ),
+      exchange: exchangeName,
+      cik: sec?.cik || null,
+    });
+  }
+
+  // Insert in chunks of 200
+  for (const chunk of chunkArray(toInsert, 200)) {
+    if (Date.now() - startTime > 50000) break;
+
+    const { error } = await supabase.from("tickers").insert(chunk);
+    if (!error) {
+      inserted += chunk.length;
+    } else {
+      // Fallback: insert one by one to skip any duplicates
+      for (const row of chunk) {
+        const { error: e2 } = await supabase.from("tickers").insert(row);
+        if (!e2) inserted++;
+      }
+    }
+  }
+
+  // 5. Backfill CIK for existing tickers that don't have one
   let cikBackfilled = 0;
-  try {
+  if (cikMap.size > 0) {
     const { data: noCik } = await supabase
       .from("tickers")
       .select("id, symbol")
       .is("cik", null)
-      .limit(500);
+      .limit(1000);
 
-    if (noCik?.length) {
-      const cikRes = await fetch(
-        "https://www.sec.gov/files/company_tickers.json",
-        {
-          headers: {
-            "User-Agent":
-              process.env.SEC_EDGAR_USER_AGENT ||
-              "Catalyst research@catalyst.claudeo.ai",
-          },
-        }
-      );
-      if (cikRes.ok) {
-        const cikData = await cikRes.json();
-        const cikMap = new Map<string, string>();
-        for (const entry of Object.values(cikData) as any[]) {
-          cikMap.set(entry.ticker, String(entry.cik_str));
-        }
-        for (const t of noCik) {
-          const cik = cikMap.get(t.symbol);
-          if (cik) {
-            await supabase.from("tickers").update({ cik }).eq("id", t.id);
-            cikBackfilled++;
-          }
-        }
+    for (const t of noCik || []) {
+      const sec = cikMap.get(t.symbol);
+      if (sec?.cik) {
+        await supabase.from("tickers").update({ cik: sec.cik }).eq("id", t.id);
+        cikBackfilled++;
       }
     }
-  } catch {}
+  }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const { count } = await supabase
+    .from("tickers")
+    .select("*", { count: "exact", head: true });
 
   return NextResponse.json({
     inserted,
-    updated,
     skipped,
     cikBackfilled,
-    totalFromFMP: allStocks.length,
+    finnhubTotal: finnhubSymbols.length,
+    filteredStocks: usStocks.length,
+    secCompanies: cikMap.size,
+    totalInDb: count,
     elapsedSeconds: elapsed,
-    message: `Universe refreshed: ${inserted} new, ${updated} updated, ${allStocks.length} total US stocks from FMP`,
   });
 }
 

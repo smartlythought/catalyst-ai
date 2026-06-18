@@ -302,6 +302,46 @@ export default function DiscoverPage() {
         </div>
       )}
 
+      {/* Mega Cap Ecosystems */}
+      <div className="px-5 mb-5">
+        <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+          Mega Cap Ecosystems
+        </h2>
+        <p className="text-[12px] text-text-muted mb-3">
+          Explore company networks — suppliers, customers, partners, and competitors
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { ticker: "NVDA", name: "NVIDIA", count: "50+", color: "#76B900" },
+            { ticker: "SPCX", name: "SpaceX", count: "20+", color: "#005288" },
+            { ticker: "AAPL", name: "Apple", count: "10+", color: "#A2AAAD" },
+            { ticker: "MSFT", name: "Microsoft", count: "10+", color: "#00A4EF" },
+            { ticker: "AMZN", name: "Amazon", count: "10+", color: "#FF9900" },
+            { ticker: "META", name: "Meta", count: "8+", color: "#0668E1" },
+            { ticker: "TSLA", name: "Tesla", count: "10+", color: "#CC0000" },
+            { ticker: "GOOGL", name: "Alphabet", count: "10+", color: "#4285F4" },
+          ].map((eco) => (
+            <Link
+              key={eco.ticker}
+              href={`/ecosystem/${eco.ticker}`}
+              className="bg-surface-1 border border-border-1 rounded-[14px] p-3 hover:border-accent-brand/30 transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div
+                  className="w-[8px] h-[8px] rounded-full"
+                  style={{ backgroundColor: eco.color }}
+                />
+                <span className="font-mono text-[14px] font-bold">{eco.ticker}</span>
+              </div>
+              <div className="text-[12px] text-text-muted">{eco.name}</div>
+              <div className="font-mono text-[10px] text-text-faint mt-1">
+                {eco.count} companies
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+
       <Disclaimer />
       <TabBar />
     </div>

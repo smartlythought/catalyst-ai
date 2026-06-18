@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getRecentForm4, getRecent8K } from "@/lib/ingestion/sec-edgar";
-import { getAnalystRatings } from "@/lib/ingestion/market-data";
-import { getCompanyNews, classifySentiment } from "@/lib/ingestion/news";
+import { getAnalystRatings, getFMPStableQuote } from "@/lib/ingestion/market-data";
+import { getCompanyNews } from "@/lib/ingestion/news";
 import { generateCall } from "@/lib/ai/gemini";
 import {
   storeIngestionResults,
@@ -10,7 +10,7 @@ import {
   logIngestion,
 } from "@/lib/supabase/queries";
 
-const FMP_KEY = process.env.FMP_API_KEY || "";
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -25,38 +25,77 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceClient();
 
   // 1. Get all active tickers
-  const { data: allTickers } = await supabase
+  const { data: allTickers } = (await supabase
     .from("tickers")
     .select("id, symbol, company_name, cik, sector")
-    .eq("is_active", true) as { data: { id: number; symbol: string; company_name: string; cik: string | null; sector: string | null }[] | null };
+    .eq("is_active", true)) as {
+    data: {
+      id: number;
+      symbol: string;
+      company_name: string;
+      cik: string | null;
+      sector: string | null;
+    }[] | null;
+  };
 
   if (!allTickers?.length) {
-    return NextResponse.json({ error: "No tickers in database" }, { status: 500 });
+    return NextResponse.json(
+      { error: "No tickers in database" },
+      { status: 500 }
+    );
   }
 
-  // 2. Batch-fetch quotes for ALL tickers via FMP (~500 per call)
+  // 2. Fetch quotes for top 50 tickers using Finnhub + FMP stable
+  //    (sequential with rate limiting — Finnhub free = 60 calls/min)
   const quotesMap = new Map<string, any>();
-  const symbolChunks = chunkArray(allTickers.map((t) => t.symbol), 500);
+  const tickersToQuote = allTickers.slice(0, 50);
 
-  for (const chunk of symbolChunks) {
-    try {
-      const res = await fetch(
-        `https://financialmodelingprep.com/api/v3/quote/${chunk.join(",")}?apikey=${FMP_KEY}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        for (const q of data || []) {
-          quotesMap.set(q.symbol, {
-            price: q.price,
-            change: q.change,
-            changePercent: q.changesPercentage,
-            volume: q.volume,
-            avgVolume: q.avgVolume,
-          });
+  for (let i = 0; i < tickersToQuote.length; i += 5) {
+    if (Date.now() - startTime > 15000) break;
+
+    const batch = tickersToQuote.slice(i, i + 5);
+    const results = await Promise.all(
+      batch.map(async (t) => {
+        // Try Finnhub first
+        if (FINNHUB_KEY) {
+          try {
+            const res = await fetch(
+              `https://finnhub.io/api/v1/quote?symbol=${t.symbol}&token=${FINNHUB_KEY}`
+            );
+            const data = await res.json();
+            if (data.c > 0) {
+              return {
+                symbol: t.symbol,
+                price: data.c,
+                change: data.d || 0,
+                changePercent: data.dp || 0,
+                volume: 0,
+                avgVolume: 0,
+              };
+            }
+          } catch {}
         }
-      }
-    } catch {}
-    await delay(150);
+
+        // Fallback: FMP stable
+        const fmpQ = await getFMPStableQuote(t.symbol);
+        if (fmpQ) {
+          return {
+            symbol: t.symbol,
+            price: fmpQ.price,
+            change: fmpQ.change,
+            changePercent: fmpQ.changePercent,
+            volume: fmpQ.volume,
+            avgVolume: 0,
+          };
+        }
+        return null;
+      })
+    );
+
+    for (const r of results) {
+      if (r) quotesMap.set(r.symbol, r);
+    }
+    await delay(250);
   }
 
   // 3. Score tickers for signal potential
@@ -75,19 +114,19 @@ export async function POST(request: NextRequest) {
     })
     .sort((a, b) => b.score - a.score);
 
-  // Take top 30 for SEC + news analysis
   const topTickers = scored.slice(0, 30);
   const results: any[] = [];
 
-  // 4. Fetch SEC data + news for top tickers (parallel batches of 5)
+  // 4. Fetch SEC data + news for top tickers
   const tickerSignals = new Map<string, any[]>();
 
   for (const batch of chunkArray(topTickers, 5)) {
+    if (Date.now() - startTime > 35000) break;
+
     await Promise.all(
       batch.map(async (ticker) => {
         const signals: any[] = [];
 
-        // SEC Form 4 (insider trades)
         if (ticker.cik) {
           try {
             const form4s = await getRecentForm4(ticker.cik);
@@ -113,10 +152,7 @@ export async function POST(request: NextRequest) {
               });
             }
           } catch {}
-        }
 
-        // SEC 8-K filings
-        if (ticker.cik) {
           try {
             const filings = await getRecent8K(ticker.cik);
             for (const f of filings.slice(0, 2)) {
@@ -130,7 +166,6 @@ export async function POST(request: NextRequest) {
           } catch {}
         }
 
-        // News sentiment
         try {
           const news = await getCompanyNews(ticker.symbol, 3);
           for (const n of news.slice(0, 3)) {
@@ -143,36 +178,29 @@ export async function POST(request: NextRequest) {
           }
         } catch {}
 
-        // Always add quote-based signal so AI has context even without SEC/news
+        // Always add quote-based signal
         const q = ticker.quote;
         if (q?.price > 0) {
           const pctAbs = Math.abs(q.changePercent || 0);
-          const volRatio = q.avgVolume > 0 ? q.volume / q.avgVolume : 1;
-          if (pctAbs > 0.5 || volRatio > 1.2) {
-            signals.push({
-              source: "technical",
-              title: `${q.changePercent >= 0 ? "Up" : "Down"} ${pctAbs.toFixed(1)}% today at $${q.price.toFixed(2)}`,
-              detail: `Volume ${volRatio > 1 ? (volRatio.toFixed(1) + "x avg") : "normal"}. Price: $${q.price.toFixed(2)}`,
-              sentiment: q.changePercent >= 0 ? "positive" : "negative",
-            });
-          } else {
-            signals.push({
-              source: "technical",
-              title: `Trading flat at $${q.price.toFixed(2)}`,
-              detail: `Change: ${q.changePercent >= 0 ? "+" : ""}${(q.changePercent || 0).toFixed(2)}%. Volume normal.`,
-              sentiment: "neutral",
-            });
-          }
+          signals.push({
+            source: "technical",
+            title: `${pctAbs > 0.5 ? (q.changePercent >= 0 ? "Up" : "Down") + " " + pctAbs.toFixed(1) + "%" : "Flat"} at $${q.price.toFixed(2)}`,
+            detail: `Change: ${q.changePercent >= 0 ? "+" : ""}${(q.changePercent || 0).toFixed(2)}%`,
+            sentiment:
+              q.changePercent > 0.5
+                ? "positive"
+                : q.changePercent < -0.5
+                  ? "negative"
+                  : "neutral",
+          });
         }
 
         tickerSignals.set(ticker.symbol, signals);
       })
     );
-
-    if (Date.now() - startTime > 45000) break; // Safety: stop before 60s timeout
   }
 
-  // 5. Run AI analysis on top tickers (max 15, parallel batches of 3)
+  // 5. AI analysis on top 15 tickers with most signals
   const aiCandidates = [...tickerSignals.entries()]
     .map(([symbol, signals]) => ({
       symbol,
@@ -240,13 +268,11 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ingested: okCount,
-    skipped: topTickers.length - results.length,
     errors: results.filter((r) => r.status === "error").length,
     totalTickers: allTickers.length,
-    screened: topTickers.length,
-    aiCandidates: aiCandidates.length,
     quotesFound: quotesMap.size,
     signalsFound: tickerSignals.size,
+    aiCandidates: aiCandidates.length,
     elapsedSeconds: elapsed,
     results,
   });

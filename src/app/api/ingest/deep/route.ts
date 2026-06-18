@@ -10,7 +10,7 @@ import {
   logIngestion,
 } from "@/lib/supabase/queries";
 
-const FMP_KEY = process.env.FMP_API_KEY || "";
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -48,27 +48,42 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No tickers in range" }, { status: 404 });
   }
 
-  // Batch-fetch quotes
+  // Fetch quotes individually via Finnhub
   const quotesMap = new Map<string, any>();
-  try {
-    const res = await fetch(
-      `https://financialmodelingprep.com/api/v3/quote/${tickers.map((t) => t.symbol).join(",")}?apikey=${FMP_KEY}`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      for (const q of data || []) {
-        quotesMap.set(q.symbol, {
-          price: q.price,
-          change: q.change,
-          changePercent: q.changesPercentage,
-          volume: q.volume,
-          avgVolume: q.avgVolume,
-        });
-      }
-    }
-  } catch {}
+  for (let i = 0; i < tickers.length; i += 5) {
+    if (Date.now() - startTime > 10000) break;
 
-  const results: any[] = [];
+    const batch = tickers.slice(i, i + 5);
+    const results = await Promise.all(
+      batch.map(async (t) => {
+        if (!FINNHUB_KEY) return null;
+        try {
+          const res = await fetch(
+            `https://finnhub.io/api/v1/quote?symbol=${t.symbol}&token=${FINNHUB_KEY}`
+          );
+          const data = await res.json();
+          if (data.c > 0) {
+            return {
+              symbol: t.symbol,
+              price: data.c,
+              change: data.d || 0,
+              changePercent: data.dp || 0,
+              volume: 0,
+              avgVolume: 0,
+            };
+          }
+        } catch {}
+        return null;
+      })
+    );
+
+    for (const r of results) {
+      if (r) quotesMap.set(r.symbol, r);
+    }
+    await delay(250);
+  }
+
+  const processResults: any[] = [];
 
   for (const ticker of tickers) {
     if (Date.now() - startTime > 50000) break;
@@ -78,7 +93,6 @@ export async function POST(request: NextRequest) {
 
     const signals: any[] = [];
 
-    // SEC Form 4
     if (ticker.cik) {
       try {
         const form4s = await getRecentForm4(ticker.cik);
@@ -104,10 +118,7 @@ export async function POST(request: NextRequest) {
           });
         }
       } catch {}
-    }
 
-    // SEC 8-K
-    if (ticker.cik) {
       try {
         const filings = await getRecent8K(ticker.cik);
         for (const f of filings.slice(0, 2)) {
@@ -121,7 +132,6 @@ export async function POST(request: NextRequest) {
       } catch {}
     }
 
-    // News
     try {
       const news = await getCompanyNews(ticker.symbol, 3);
       for (const n of news.slice(0, 3)) {
@@ -134,12 +144,11 @@ export async function POST(request: NextRequest) {
       }
     } catch {}
 
-    // Quote-based signal
     const pctAbs = Math.abs(quote.changePercent || 0);
     signals.push({
       source: "technical",
       title: `${pctAbs > 0.5 ? (quote.changePercent >= 0 ? "Up" : "Down") + " " + pctAbs.toFixed(1) + "%" : "Flat"} at $${quote.price.toFixed(2)}`,
-      detail: `Volume: ${quote.volume?.toLocaleString() || "N/A"}`,
+      detail: `Change: ${quote.changePercent >= 0 ? "+" : ""}${(quote.changePercent || 0).toFixed(2)}%`,
       sentiment:
         quote.changePercent > 0.5
           ? "positive"
@@ -148,7 +157,6 @@ export async function POST(request: NextRequest) {
             : "neutral",
     });
 
-    // AI analysis
     try {
       const analysts = await getAnalystRatings(ticker.symbol).catch(() => null);
 
@@ -174,7 +182,7 @@ export async function POST(request: NextRequest) {
         "gemini-2.5-flash"
       );
 
-      results.push({
+      processResults.push({
         ticker: ticker.symbol,
         status: "ok",
         call: aiResult.call,
@@ -182,7 +190,7 @@ export async function POST(request: NextRequest) {
         signalCount: signals.length,
       });
     } catch (err) {
-      results.push({
+      processResults.push({
         ticker: ticker.symbol,
         status: "error",
         error: err instanceof Error ? err.message : "Unknown",
@@ -190,18 +198,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const okCount = results.filter((r) => r.status === "ok").length;
+  const okCount = processResults.filter((r) => r.status === "ok").length;
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   await logIngestion("deep_analysis", "success", okCount);
 
   return NextResponse.json({
     offset,
     limit,
-    processed: results.length,
+    processed: processResults.length,
     ingested: okCount,
-    errors: results.filter((r) => r.status === "error").length,
+    quotesFound: quotesMap.size,
+    errors: processResults.filter((r) => r.status === "error").length,
     elapsedSeconds: elapsed,
     nextOffset: offset + limit,
-    results,
+    results: processResults,
   });
 }
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));

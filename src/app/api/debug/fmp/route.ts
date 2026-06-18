@@ -4,9 +4,11 @@ const FMP_KEY = process.env.FMP_API_KEY || "";
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
 export async function GET(request: NextRequest) {
-  // Temporarily open for diagnostics — will re-add auth after
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const results: Record<string, any> = {
     fmpKey: FMP_KEY ? FMP_KEY.slice(0, 6) + "..." : "NONE",

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 
 const FMP_KEY = process.env.FMP_API_KEY || "";
+const FMP_STABLE = "https://financialmodelingprep.com/stable";
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q")?.trim();
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     .select("symbol, company_name, exchange, sector")
     .or(`symbol.ilike.%${q}%,company_name.ilike.%${q}%`)
     .eq("is_active", true)
-    .limit(10);
+    .limit(15);
 
   const results = (dbResults || []).map((t: any) => ({
     symbol: t.symbol,
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
   if (results.length < 5 && FMP_KEY) {
     try {
       const res = await fetch(
-        `https://financialmodelingprep.com/api/v3/search?query=${encodeURIComponent(q)}&limit=10&exchange=NASDAQ,NYSE&apikey=${FMP_KEY}`
+        `${FMP_STABLE}/search?query=${encodeURIComponent(q)}&limit=10&apikey=${FMP_KEY}`
       );
       if (res.ok) {
         const fmpData = await res.json();
