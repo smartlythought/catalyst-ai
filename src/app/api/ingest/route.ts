@@ -143,16 +143,36 @@ export async function POST(request: NextRequest) {
           }
         } catch {}
 
-        if (signals.length > 0) {
-          tickerSignals.set(ticker.symbol, signals);
+        // Always add quote-based signal so AI has context even without SEC/news
+        const q = ticker.quote;
+        if (q?.price > 0) {
+          const pctAbs = Math.abs(q.changePercent || 0);
+          const volRatio = q.avgVolume > 0 ? q.volume / q.avgVolume : 1;
+          if (pctAbs > 0.5 || volRatio > 1.2) {
+            signals.push({
+              source: "technical",
+              title: `${q.changePercent >= 0 ? "Up" : "Down"} ${pctAbs.toFixed(1)}% today at $${q.price.toFixed(2)}`,
+              detail: `Volume ${volRatio > 1 ? (volRatio.toFixed(1) + "x avg") : "normal"}. Price: $${q.price.toFixed(2)}`,
+              sentiment: q.changePercent >= 0 ? "positive" : "negative",
+            });
+          } else {
+            signals.push({
+              source: "technical",
+              title: `Trading flat at $${q.price.toFixed(2)}`,
+              detail: `Change: ${q.changePercent >= 0 ? "+" : ""}${(q.changePercent || 0).toFixed(2)}%. Volume normal.`,
+              sentiment: "neutral",
+            });
+          }
         }
+
+        tickerSignals.set(ticker.symbol, signals);
       })
     );
 
     if (Date.now() - startTime > 45000) break; // Safety: stop before 60s timeout
   }
 
-  // 5. Run AI analysis on tickers with signals (max 12, parallel batches of 3)
+  // 5. Run AI analysis on top tickers (max 15, parallel batches of 3)
   const aiCandidates = [...tickerSignals.entries()]
     .map(([symbol, signals]) => ({
       symbol,
@@ -161,7 +181,8 @@ export async function POST(request: NextRequest) {
       quote: quotesMap.get(symbol),
     }))
     .filter((c) => c.quote?.price > 0)
-    .slice(0, 12);
+    .sort((a, b) => b.signals.length - a.signals.length)
+    .slice(0, 15);
 
   for (const batch of chunkArray(aiCandidates, 3)) {
     if (Date.now() - startTime > 50000) break;
@@ -223,6 +244,9 @@ export async function POST(request: NextRequest) {
     errors: results.filter((r) => r.status === "error").length,
     totalTickers: allTickers.length,
     screened: topTickers.length,
+    aiCandidates: aiCandidates.length,
+    quotesFound: quotesMap.size,
+    signalsFound: tickerSignals.size,
     elapsedSeconds: elapsed,
     results,
   });
