@@ -59,9 +59,17 @@ export default async function HomePage() {
           </span>
         </Link>
 
-        <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
-          Today&apos;s calls
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
+            Today&apos;s calls
+          </h1>
+          <Link
+            href="/discover"
+            className="text-[12px] font-medium text-accent-brand px-3 py-1.5 rounded-full bg-accent-brand/10 border border-accent-brand/20"
+          >
+            Discover
+          </Link>
+        </div>
 
         {/* Stats strip */}
         <div className="flex items-center gap-4 mt-3">
