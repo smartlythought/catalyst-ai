@@ -1,0 +1,70 @@
+"use client";
+
+import type { Signal } from "@/lib/types";
+import { cn, formatPercent, callColor } from "@/lib/utils";
+import { Sparkline } from "./sparkline";
+import { ConvictionMeter } from "./conviction-meter";
+import { CallPill } from "./call-pill";
+import Link from "next/link";
+
+interface SignalCardProps {
+  signal: Signal;
+}
+
+export function SignalCard({ signal }: SignalCardProps) {
+  const changeColor =
+    signal.changePercent >= 0 ? "var(--pos-green-bright)" : "var(--neg-red-bright)";
+  const color = callColor(signal.call);
+
+  return (
+    <Link href={`/signal/${signal.id}`}>
+      <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4 flex flex-col gap-3 active:opacity-90 transition-opacity">
+        {/* Row 1: Ticker, price, sparkline, call pill */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[18px] font-extrabold">{signal.ticker}</span>
+              <span className="text-[13px] text-text-muted truncate">
+                {signal.company}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="text-right">
+              <div className="font-mono text-[14px] font-medium">
+                ${signal.price.toFixed(2)}
+              </div>
+              <div
+                className="font-mono text-[12px] font-medium"
+                style={{ color: changeColor }}
+              >
+                {formatPercent(signal.changePercent)}
+              </div>
+            </div>
+            <Sparkline data={signal.sparkline} color={changeColor} />
+            <CallPill call={signal.call} />
+          </div>
+        </div>
+
+        {/* Row 2: Conviction meter */}
+        <ConvictionMeter
+          value={signal.conviction}
+          color={color}
+          label={signal.horizon}
+        />
+
+        {/* Row 3: Tag chips */}
+        <div className="flex flex-wrap gap-1.5">
+          {signal.tags.map((tag) => (
+            <span
+              key={tag}
+              className="font-mono text-[10px] font-medium tracking-[0.5px] uppercase text-text-faint px-2 py-0.5 rounded-md bg-chip-bg border border-chip-border"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+    </Link>
+  );
+}

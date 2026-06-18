@@ -1,26 +1,143 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Background */
+  --bg-app: #0A0C10;
+  --bg-page: #0A0B0F;
+
+  /* Surfaces */
+  --surface-1: #12151C;
+  --surface-2: #0F1218;
+
+  /* Borders */
+  --border-1: #1E2430;
+  --border-hairline: #1A1F29;
+  --border-track: #1C212B;
+
+  /* Text */
+  --text-primary: #F2F3F5;
+  --text-secondary: #C7CBD2;
+  --text-muted: #8A909C;
+  --text-faint: #6B7280;
+  --text-faint-2: #4F5663;
+
+  /* Accent */
+  --accent-brand: #E8743B;
+  --accent-brand-dark: #C9531F;
+
+  /* Semantic */
+  --pos-green: #16C784;
+  --pos-green-bright: #3ED68C;
+  --neg-red: #F6465D;
+  --neg-red-bright: #FF7A8C;
+  --neutral-watch: #9AA1AD;
+
+  /* Tab bar */
+  --tab-inactive: #5B626E;
+  --tab-bar-bg: rgba(10, 12, 16, 0.92);
+  --tab-bar-border: #161B24;
+
+  /* Hero gradients (BUY) */
+  --hero-buy-bg: linear-gradient(165deg, #13201A, #0F141A);
+  --hero-buy-border: #1C3328;
+
+  /* Hero gradients (REDUCE) */
+  --hero-reduce-bg: linear-gradient(165deg, #20141A, #190F14);
+  --hero-reduce-border: #3A1C26;
+
+  /* Hero gradients (WATCH) */
+  --hero-watch-bg: linear-gradient(165deg, #16191F, #0F1218);
+  --hero-watch-border: #232A36;
+
+  /* Chip */
+  --chip-bg: #0F1218;
+  --chip-border: #232A36;
+
+  /* Toggle */
+  --toggle-on: #16C784;
+  --toggle-off: #2A2F3A;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-bg-app: var(--bg-app);
+  --color-bg-page: var(--bg-page);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-border-1: var(--border-1);
+  --color-border-hairline: var(--border-hairline);
+  --color-border-track: var(--border-track);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  --color-accent-brand: var(--accent-brand);
+  --color-accent-brand-dark: var(--accent-brand-dark);
+  --color-pos-green: var(--pos-green);
+  --color-pos-green-bright: var(--pos-green-bright);
+  --color-neg-red: var(--neg-red);
+  --color-neg-red-bright: var(--neg-red-bright);
+  --color-neutral-watch: var(--neutral-watch);
+  --color-tab-inactive: var(--tab-inactive);
+  --color-tab-bar-bg: var(--tab-bar-bg);
+  --color-tab-bar-border: var(--tab-bar-border);
+  --color-chip-bg: var(--chip-bg);
+  --color-chip-border: var(--chip-border);
+  --color-toggle-on: var(--toggle-on);
+  --color-toggle-off: var(--toggle-off);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.animate-live-pulse {
+  animation: pulse-live 1.8s infinite;
+}
+
+/* Conviction meter */
+.meter-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-track);
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Safe area padding for mobile */
+.safe-top {
+  padding-top: max(env(safe-area-inset-top), 54px);
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 34px);
 }
