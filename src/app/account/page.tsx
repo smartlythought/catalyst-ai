@@ -128,6 +128,48 @@ export default function AccountPage() {
           </div>
         )}
 
+        {/* Quick actions */}
+        <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden mb-5">
+          {[
+            { label: "Edit profile", href: "/onboarding", icon: "pencil" },
+            { label: "Alert settings", href: "/alerts", icon: "bell" },
+            { label: "Portfolio", href: "/portfolio", icon: "chart" },
+            { label: "AI Chat", href: "/chat", icon: "chat" },
+          ].map((item, i) => (
+            <a
+              key={item.label}
+              href={item.href}
+              className={`flex items-center justify-between px-4 py-3.5 ${
+                i < 3 ? "border-b border-border-hairline" : ""
+              }`}
+            >
+              <span className="text-[15px] font-medium">{item.label}</span>
+              <span className="text-[14px] text-text-faint">&rsaquo;</span>
+            </a>
+          ))}
+        </div>
+
+        {/* App info */}
+        <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden mb-5">
+          {[
+            { label: "Version", value: "1.0.0" },
+            { label: "AI Model", value: "Gemini 2.5 Flash" },
+            { label: "Data Sources", value: "FMP + Finnhub + SEC" },
+          ].map((item, i) => (
+            <div
+              key={item.label}
+              className={`flex items-center justify-between px-4 py-3.5 ${
+                i < 2 ? "border-b border-border-hairline" : ""
+              }`}
+            >
+              <span className="text-[14px] text-text-muted">{item.label}</span>
+              <span className="text-[13px] font-mono text-text-faint">
+                {item.value}
+              </span>
+            </div>
+          ))}
+        </div>
+
         {/* Sign out */}
         <button
           onClick={handleSignOut}
@@ -135,6 +177,11 @@ export default function AccountPage() {
         >
           Sign out
         </button>
+
+        <p className="text-[10px] text-text-faint font-mono tracking-[0.5px] text-center mt-4 mb-2">
+          Catalyst is not a financial advisor. All AI calls are for
+          informational purposes only.
+        </p>
       </div>
 
       <TabBar />

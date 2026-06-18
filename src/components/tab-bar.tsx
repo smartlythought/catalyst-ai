@@ -45,37 +45,49 @@ const tabs = [
     ),
   },
   {
-    name: "Watchlist",
-    href: "/watchlist",
-    match: (p: string) => p.startsWith("/watchlist"),
+    name: "Portfolio",
+    href: "/portfolio",
+    match: (p: string) => p.startsWith("/portfolio"),
     icon: (active: boolean) => (
       <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
-        <path
-          d="M11 3L13.5 8.5L19.5 9L15 13.5L16.5 19.5L11 16.5L5.5 19.5L7 13.5L2.5 9L8.5 8.5L11 3Z"
+        <rect
+          x="3"
+          y="5"
+          width="16"
+          height="12"
+          rx="2"
           stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"}
           strokeWidth="1.5"
-          strokeLinejoin="round"
+        />
+        <path
+          d="M3 9H19"
+          stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"}
+          strokeWidth="1.5"
+        />
+        <path
+          d="M7 13H10"
+          stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"}
+          strokeWidth="1.5"
+          strokeLinecap="round"
         />
       </svg>
     ),
   },
   {
-    name: "Alerts",
-    href: "/alerts",
-    match: (p: string) => p.startsWith("/alerts"),
+    name: "AI Chat",
+    href: "/chat",
+    match: (p: string) => p.startsWith("/chat"),
     icon: (active: boolean) => (
       <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
         <path
-          d="M11 3C7.68 3 5 5.68 5 9V13L3 16H19L17 13V9C17 5.68 14.32 3 11 3Z"
+          d="M4 4H18V15H8L4 18V4Z"
           stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"}
           strokeWidth="1.5"
           strokeLinejoin="round"
         />
-        <path
-          d="M9 16C9 17.1 9.9 18 11 18C12.1 18 13 17.1 13 16"
-          stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"}
-          strokeWidth="1.5"
-        />
+        <circle cx="8" cy="10" r="1" fill={active ? "var(--accent-brand)" : "var(--tab-inactive)"} />
+        <circle cx="11" cy="10" r="1" fill={active ? "var(--accent-brand)" : "var(--tab-inactive)"} />
+        <circle cx="14" cy="10" r="1" fill={active ? "var(--accent-brand)" : "var(--tab-inactive)"} />
       </svg>
     ),
   },

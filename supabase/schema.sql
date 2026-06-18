@@ -276,6 +276,37 @@ CREATE INDEX IF NOT EXISTS idx_news_cache_ticker ON news_cache (ticker_id, publi
 CREATE INDEX IF NOT EXISTS idx_news_cache_published ON news_cache (published_at DESC);
 
 -- ============================================================
+-- PRICE_ALERTS: User-configurable price alerts
+-- ============================================================
+CREATE TABLE IF NOT EXISTS price_alerts (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  ticker_id BIGINT NOT NULL REFERENCES tickers(id) ON DELETE CASCADE,
+  condition TEXT NOT NULL CHECK (condition IN ('above', 'below')),
+  target_price NUMERIC(12,2) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  triggered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_alerts_user ON price_alerts (user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_price_alerts_active ON price_alerts (is_active, ticker_id);
+
+-- ============================================================
+-- PUSH_SUBSCRIPTIONS: Web Push notification endpoints
+-- ============================================================
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT,
+  auth TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions (user_id);
+
+-- ============================================================
 -- INGESTION_LOG: Track data pipeline runs
 -- ============================================================
 CREATE TABLE ingestion_log (
@@ -318,6 +349,23 @@ CREATE POLICY "Users read own watchlist" ON watchlist
   FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users manage own watchlist" ON watchlist
   FOR ALL USING (auth.uid() = user_id);
+
+ALTER TABLE price_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE news_cache ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read own price_alerts" ON price_alerts
+  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users manage own price_alerts" ON price_alerts
+  FOR ALL USING (auth.uid() = user_id);
+
+CREATE POLICY "Users read own push_subscriptions" ON push_subscriptions
+  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users manage own push_subscriptions" ON push_subscriptions
+  FOR ALL USING (auth.uid() = user_id);
+
+CREATE POLICY "Public read news_cache" ON news_cache
+  FOR SELECT USING (true);
 
 -- Public read access for market data
 ALTER TABLE tickers ENABLE ROW LEVEL SECURITY;

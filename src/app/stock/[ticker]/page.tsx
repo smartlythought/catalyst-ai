@@ -477,6 +477,32 @@ export default function StockDeepDivePage({
         </div>
       )}
 
+      {/* Action buttons */}
+      <div className="px-5 mb-5 flex gap-3">
+        <Link
+          href={`/chat?ticker=${ticker.toUpperCase()}`}
+          className="flex-1 h-[48px] rounded-[14px] bg-accent-brand text-white font-bold text-[14px] flex items-center justify-center gap-2"
+        >
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+            <path
+              d="M4 4H16V13H8L4 16V4Z"
+              stroke="white"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Ask AI
+        </Link>
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(`Check out ${ticker.toUpperCase()} at $${price.toFixed(2)} on Catalyst`)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="h-[48px] px-5 rounded-[14px] border border-border-1 bg-surface-1 font-bold text-[14px] text-text-secondary flex items-center justify-center"
+        >
+          Share
+        </a>
+      </div>
+
       <Disclaimer />
 
       {/* Empty state */}

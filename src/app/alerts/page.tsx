@@ -1,9 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TabBar } from "@/components/tab-bar";
 import type { AlertSettings } from "@/lib/types";
+
+interface PriceAlert {
+  id: number;
+  ticker: string;
+  company: string;
+  condition: "above" | "below";
+  targetPrice: number;
+  isActive: boolean;
+  triggered: boolean;
+  triggeredAt: string | null;
+}
 
 function Toggle({
   enabled,
@@ -55,6 +67,11 @@ const DEFAULT_SETTINGS: AlertSettings = {
 export default function AlertsPage() {
   const [settings, setSettings] = useState<AlertSettings>(DEFAULT_SETTINGS);
   const [saving, setSaving] = useState(false);
+  const [priceAlerts, setPriceAlerts] = useState<PriceAlert[]>([]);
+  const [showAddAlert, setShowAddAlert] = useState(false);
+  const [alertSymbol, setAlertSymbol] = useState("");
+  const [alertCondition, setAlertCondition] = useState<"above" | "below">("above");
+  const [alertPrice, setAlertPrice] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -89,9 +106,43 @@ export default function AlertsPage() {
           },
         });
       }
+
+      try {
+        const res = await fetch("/api/alerts/price");
+        const alertData = await res.json();
+        setPriceAlerts(alertData.alerts || []);
+      } catch {}
     }
     load();
   }, []);
+
+  async function addPriceAlert() {
+    if (!alertSymbol || !alertPrice) return;
+    setSaving(true);
+    try {
+      await fetch("/api/alerts/price", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: alertSymbol.toUpperCase(),
+          condition: alertCondition,
+          targetPrice: parseFloat(alertPrice),
+        }),
+      });
+      setShowAddAlert(false);
+      setAlertSymbol("");
+      setAlertPrice("");
+      const res = await fetch("/api/alerts/price");
+      const data = await res.json();
+      setPriceAlerts(data.alerts || []);
+    } catch {}
+    setSaving(false);
+  }
+
+  async function deletePriceAlert(id: number) {
+    await fetch(`/api/alerts/price?id=${id}`, { method: "DELETE" });
+    setPriceAlerts(priceAlerts.filter((a) => a.id !== id));
+  }
 
   const persist = useCallback(
     async (updated: AlertSettings) => {
@@ -156,6 +207,118 @@ export default function AlertsPage() {
           )}
         </div>
       </header>
+
+      {/* Price Alerts */}
+      <div className="px-5 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px]">
+            Price Alerts ({priceAlerts.length})
+          </h2>
+          <button
+            onClick={() => setShowAddAlert(!showAddAlert)}
+            className="text-[13px] font-medium text-accent-brand"
+          >
+            {showAddAlert ? "Cancel" : "+ Add"}
+          </button>
+        </div>
+
+        {showAddAlert && (
+          <div className="bg-surface-1 border border-border-1 rounded-[14px] p-4 mb-3">
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                placeholder="Symbol"
+                value={alertSymbol}
+                onChange={(e) => setAlertSymbol(e.target.value)}
+                className="flex-1 h-[40px] rounded-[10px] border border-border-1 bg-surface-2 px-3 text-[14px] text-text-primary placeholder:text-text-faint outline-none font-mono"
+              />
+              <select
+                value={alertCondition}
+                onChange={(e) =>
+                  setAlertCondition(e.target.value as "above" | "below")
+                }
+                className="h-[40px] rounded-[10px] border border-border-1 bg-surface-2 px-3 text-[14px] text-text-primary outline-none"
+              >
+                <option value="above">Above</option>
+                <option value="below">Below</option>
+              </select>
+              <input
+                type="number"
+                placeholder="Price"
+                value={alertPrice}
+                onChange={(e) => setAlertPrice(e.target.value)}
+                className="w-[90px] h-[40px] rounded-[10px] border border-border-1 bg-surface-2 px-3 text-[14px] text-text-primary placeholder:text-text-faint outline-none font-mono"
+              />
+            </div>
+            <button
+              onClick={addPriceAlert}
+              disabled={saving}
+              className="w-full h-[40px] rounded-[10px] bg-accent-brand text-white font-bold text-[14px]"
+            >
+              {saving ? "Adding..." : "Create alert"}
+            </button>
+          </div>
+        )}
+
+        {priceAlerts.length > 0 ? (
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden">
+            {priceAlerts.map((alert, i) => (
+              <div
+                key={alert.id}
+                className={`flex items-center gap-3 px-4 py-3.5 ${
+                  i < priceAlerts.length - 1
+                    ? "border-b border-border-hairline"
+                    : ""
+                }`}
+              >
+                <Link
+                  href={`/stock/${alert.ticker}`}
+                  className="flex-1 flex items-center gap-3"
+                >
+                  <div className="w-[36px] h-[36px] rounded-full bg-surface-2 border border-border-1 flex items-center justify-center font-mono text-[11px] font-bold text-text-muted">
+                    {alert.ticker.slice(0, 4)}
+                  </div>
+                  <div>
+                    <div className="font-mono text-[14px] font-bold">
+                      {alert.ticker}
+                    </div>
+                    <div className="text-[12px] text-text-muted">
+                      {alert.condition === "above" ? "Above" : "Below"} $
+                      {alert.targetPrice.toFixed(2)}
+                    </div>
+                  </div>
+                </Link>
+                <div className="flex items-center gap-2">
+                  {alert.triggered ? (
+                    <span className="text-[10px] font-mono font-medium text-pos-green px-2 py-0.5 rounded bg-pos-green/10">
+                      Triggered
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono font-medium text-text-faint px-2 py-0.5 rounded bg-surface-2">
+                      Active
+                    </span>
+                  )}
+                  <button
+                    onClick={() => deletePriceAlert(alert.id)}
+                    className="text-text-faint text-[14px]"
+                  >
+                    &times;
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          !showAddAlert && (
+            <div className="py-6 text-center">
+              <p className="text-text-muted text-[13px]">
+                No price alerts. Tap + Add to get notified when a stock hits
+                your target.
+              </p>
+            </div>
+          )
+        )}
+      </div>
 
       {/* Delivery */}
       <div className="px-5 mb-6">
