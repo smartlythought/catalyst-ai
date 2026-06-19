@@ -15,6 +15,7 @@ export default function AccountPage() {
   const [whatsappSaved, setWhatsappSaved] = useState(false);
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -58,6 +59,7 @@ export default function AccountPage() {
   async function sendTestAlert() {
     setTestSending(true);
     setTestResult(null);
+    setTestError(null);
     try {
       const res = await fetch("/api/whatsapp/send", {
         method: "POST",
@@ -73,12 +75,19 @@ export default function AccountPage() {
           why: "This is a test alert from Catalyst. If you received this, WhatsApp alerts are working!",
         }),
       });
-      setTestResult(res.ok ? "ok" : "fail");
+      if (res.ok) {
+        setTestResult("ok");
+      } else {
+        const data = await res.json().catch(() => ({ error: "Unknown error" }));
+        setTestResult("fail");
+        setTestError(data.error || `HTTP ${res.status}`);
+      }
     } catch {
       setTestResult("fail");
+      setTestError("Network error");
     }
     setTestSending(false);
-    setTimeout(() => setTestResult(null), 4000);
+    setTimeout(() => { setTestResult(null); setTestError(null); }, 8000);
   }
 
   async function handleSignOut() {
@@ -229,6 +238,11 @@ export default function AccountPage() {
               </button>
             )}
           </div>
+          {testError && (
+            <p className="text-[11px] text-neg-red mt-2 font-mono break-all">
+              {testError}
+            </p>
+          )}
           {!profile?.whatsapp_number && (
             <p className="text-[11px] text-accent-brand mt-1 font-medium">
               Save your number, then enable WhatsApp in Alert settings.

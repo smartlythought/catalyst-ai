@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
-  const sent = await sendSignalToWhatsApp(profile.whatsapp_number, {
+  const result = await sendSignalToWhatsApp(profile.whatsapp_number, {
     ticker: body.ticker,
     call: body.call,
     conviction: body.conviction,
@@ -38,9 +38,9 @@ export async function POST(request: NextRequest) {
     why: body.why,
   });
 
-  if (!sent) {
+  if (!result.ok) {
     return NextResponse.json(
-      { error: "Failed to send WhatsApp message" },
+      { error: result.error || "Failed to send WhatsApp message" },
       { status: 500 }
     );
   }

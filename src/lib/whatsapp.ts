@@ -15,8 +15,16 @@ interface SignalMessage {
   why: string;
 }
 
-async function sendWhatsAppMessage(phoneNumber: string, body: string): Promise<boolean> {
-  if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID) return false;
+async function sendWhatsAppMessage(
+  phoneNumber: string,
+  body: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID) {
+    return {
+      ok: false,
+      error: `Missing env: ${!WHATSAPP_TOKEN ? "WHATSAPP_TOKEN" : ""} ${!WHATSAPP_PHONE_ID ? "WHATSAPP_PHONE_ID" : ""}`.trim(),
+    };
+  }
 
   const cleanPhone = phoneNumber.replace(/[^0-9]/g, "");
 
@@ -38,16 +46,21 @@ async function sendWhatsAppMessage(phoneNumber: string, body: string): Promise<b
       }
     );
 
-    return res.ok;
-  } catch {
-    return false;
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      return { ok: false, error: `Meta API ${res.status}: ${errBody}` };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
   }
 }
 
 export async function sendSignalToWhatsApp(
   phoneNumber: string,
   signal: SignalMessage
-): Promise<boolean> {
+): Promise<{ ok: boolean; error?: string }> {
   const emoji =
     signal.call === "BUY" ? "🟢" : signal.call === "REDUCE" ? "🔴" : "⚪";
 
@@ -69,7 +82,7 @@ export async function sendSignalToWhatsApp(
 export async function sendWeeklyDigest(
   phoneNumber: string,
   picks: { shortTerm: string[]; longTerm: string[]; summary: string }
-): Promise<boolean> {
+): Promise<{ ok: boolean; error?: string }> {
   let body = `📊 *Catalyst Weekly Picks*\n\n`;
   body += `*Short-term (1-4 weeks):*\n`;
   picks.shortTerm.forEach((t, i) => {
@@ -115,8 +128,8 @@ export async function dispatchSignalAlerts(signal: SignalMessage): Promise<numbe
       .single();
 
     if (profile?.whatsapp_number) {
-      const ok = await sendSignalToWhatsApp(profile.whatsapp_number, signal);
-      if (ok) sent++;
+      const result = await sendSignalToWhatsApp(profile.whatsapp_number, signal);
+      if (result.ok) sent++;
     }
   }
 
