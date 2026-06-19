@@ -194,6 +194,106 @@ export default function PortfolioPage() {
         </div>
       </div>
 
+      {/* Portfolio Allocation Donut */}
+      {holdings.length >= 2 && totalValue > 0 && (() => {
+        const donutColors = [
+          "var(--accent-brand)",
+          "var(--pos-green)",
+          "#53BDEB",
+          "#E8A838",
+          "var(--neg-red)",
+          "#9AA1AD",
+          "#A78BFA",
+          "#F472B6",
+        ];
+        const donutR = 60;
+        const donutStroke = 18;
+        const circumference = 2 * Math.PI * donutR;
+        let accumulated = 0;
+        const segments = holdings.map((h, i) => {
+          const pct = h.totalValue / totalValue;
+          const dashLen = pct * circumference;
+          const dashOffset = -accumulated * circumference;
+          accumulated += pct;
+          return {
+            ticker: h.ticker,
+            pct,
+            color: donutColors[i % donutColors.length],
+            dashLen,
+            dashOffset,
+          };
+        });
+        return (
+          <div className="px-5 mb-4">
+            <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+              Allocation
+            </h2>
+            <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
+              <div className="flex items-center justify-center mb-4">
+                <svg width="160" height="160" viewBox="0 0 160 160">
+                  {segments.map((seg, i) => (
+                    <circle
+                      key={i}
+                      cx="80"
+                      cy="80"
+                      r={donutR}
+                      fill="none"
+                      stroke={seg.color}
+                      strokeWidth={donutStroke}
+                      strokeDasharray={`${seg.dashLen} ${circumference - seg.dashLen}`}
+                      strokeDashoffset={seg.dashOffset}
+                      transform="rotate(-90 80 80)"
+                      strokeLinecap="butt"
+                    />
+                  ))}
+                  <text
+                    x="80"
+                    y="74"
+                    textAnchor="middle"
+                    fill="var(--text-faint)"
+                    fontSize="9"
+                    fontFamily="monospace"
+                  >
+                    TOTAL
+                  </text>
+                  <text
+                    x="80"
+                    y="90"
+                    textAnchor="middle"
+                    fill="var(--text-primary)"
+                    fontSize="16"
+                    fontWeight="700"
+                    fontFamily="monospace"
+                  >
+                    ${totalValue >= 1e6
+                      ? `${(totalValue / 1e6).toFixed(1)}M`
+                      : totalValue >= 1e3
+                        ? `${(totalValue / 1e3).toFixed(1)}K`
+                        : totalValue.toFixed(0)}
+                  </text>
+                </svg>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
+                {segments.map((seg) => (
+                  <div key={seg.ticker} className="flex items-center gap-1.5">
+                    <div
+                      className="w-[8px] h-[8px] rounded-full flex-shrink-0"
+                      style={{ backgroundColor: seg.color }}
+                    />
+                    <span className="font-mono text-[11px] font-medium text-text-secondary">
+                      {seg.ticker}
+                    </span>
+                    <span className="font-mono text-[11px] text-text-faint">
+                      {(seg.pct * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Holdings */}
       <div className="px-5">
         <div className="flex items-center justify-between mb-3">

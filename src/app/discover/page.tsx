@@ -178,53 +178,139 @@ export default function DiscoverPage() {
         </Link>
       </div>
 
-      {/* Sector Heatmap */}
-      {pulse?.sectors && pulse.sectors.length > 0 && (
-        <div className="px-5 mb-5">
-          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
-            Sector Performance
-          </h2>
-          <div className="grid grid-cols-3 gap-1.5">
-            {pulse.sectors.map((s) => (
-              <div
-                key={s.sector}
-                className="rounded-[10px] p-2.5 text-center"
-                style={{
-                  backgroundColor:
-                    s.change >= 1
-                      ? "rgba(22, 199, 132, 0.15)"
-                      : s.change >= 0
-                        ? "rgba(22, 199, 132, 0.07)"
-                        : s.change >= -1
-                          ? "rgba(234, 57, 67, 0.07)"
-                          : "rgba(234, 57, 67, 0.15)",
-                  border: `1px solid ${
-                    s.change >= 0
-                      ? "rgba(22, 199, 132, 0.2)"
-                      : "rgba(234, 57, 67, 0.2)"
-                  }`,
-                }}
-              >
-                <div className="text-[10px] text-text-muted truncate mb-0.5">
-                  {s.sector.replace("_", " ")}
-                </div>
-                <div
-                  className="font-mono text-[13px] font-bold"
-                  style={{
-                    color:
-                      s.change >= 0
-                        ? "var(--pos-green-bright)"
-                        : "var(--neg-red-bright)",
-                  }}
-                >
-                  {s.change >= 0 ? "+" : ""}
-                  {s.change.toFixed(2)}%
-                </div>
+      {/* Exec Events */}
+      <div className="px-5 mb-5">
+        <Link
+          href="/events"
+          className="block bg-surface-1 border border-border-1 rounded-[18px] p-4 active:opacity-90 transition-opacity hover:border-accent-brand/30"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-[40px] h-[40px] rounded-full bg-surface-2 border border-border-1 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <rect
+                  x="3"
+                  y="4"
+                  width="14"
+                  height="13"
+                  rx="2"
+                  stroke="var(--text-muted)"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M3 8H17"
+                  stroke="var(--text-muted)"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M7 2V5"
+                  stroke="var(--text-muted)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M13 2V5"
+                  stroke="var(--text-muted)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <circle cx="10" cy="13" r="1.5" fill="var(--text-muted)" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="text-[15px] font-bold">Exec Events</div>
+              <div className="text-[12px] text-text-muted mt-0.5">
+                Track earnings calls, conferences, and executive events
               </div>
-            ))}
+            </div>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              className="shrink-0"
+            >
+              <path
+                d="M6 4L10 8L6 12"
+                stroke="var(--text-faint)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
-        </div>
-      )}
+        </Link>
+      </div>
+
+      {/* Sector Heatmap */}
+      {pulse?.sectors && pulse.sectors.length > 0 && (() => {
+        const maxAbsChange = Math.max(
+          ...pulse.sectors.map((s) => Math.abs(s.change)),
+          0.01
+        );
+        return (
+          <div className="px-5 mb-5">
+            <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+              Sector Performance
+            </h2>
+            <div className="grid grid-cols-3 gap-1.5">
+              {pulse.sectors.map((s) => {
+                const barPct = Math.min((Math.abs(s.change) / maxAbsChange) * 100, 100);
+                const isPositive = s.change >= 0;
+                return (
+                  <div
+                    key={s.sector}
+                    className="rounded-[10px] p-2.5"
+                    style={{
+                      backgroundColor:
+                        s.change >= 1
+                          ? "rgba(22, 199, 132, 0.15)"
+                          : s.change >= 0
+                            ? "rgba(22, 199, 132, 0.07)"
+                            : s.change >= -1
+                              ? "rgba(234, 57, 67, 0.07)"
+                              : "rgba(234, 57, 67, 0.15)",
+                      border: `1px solid ${
+                        isPositive
+                          ? "rgba(22, 199, 132, 0.2)"
+                          : "rgba(234, 57, 67, 0.2)"
+                      }`,
+                    }}
+                  >
+                    <div className="text-[10px] text-text-muted truncate mb-0.5">
+                      {s.sector.replace("_", " ")}
+                    </div>
+                    <div
+                      className="font-mono text-[13px] font-bold mb-1.5"
+                      style={{
+                        color: isPositive
+                          ? "var(--pos-green-bright)"
+                          : "var(--neg-red-bright)",
+                      }}
+                    >
+                      {isPositive ? "+" : ""}
+                      {s.change.toFixed(2)}%
+                    </div>
+                    {/* Mini bar chart */}
+                    <div className="h-[4px] rounded-full overflow-hidden"
+                      style={{ backgroundColor: isPositive ? "rgba(22, 199, 132, 0.12)" : "rgba(234, 57, 67, 0.12)" }}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${barPct}%`,
+                          backgroundColor: isPositive
+                            ? "var(--pos-green)"
+                            : "var(--neg-red)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Market Movers */}
       <div className="px-5 mb-5">

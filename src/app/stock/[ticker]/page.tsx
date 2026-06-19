@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { callColor, formatPercent, formatMarketCap } from "@/lib/utils";
 import { TabBar } from "@/components/tab-bar";
@@ -48,6 +48,8 @@ export default function StockDeepDivePage({
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState("1M");
   const [onWatchlist, setOnWatchlist] = useState(false);
+  const [crosshair, setCrosshair] = useState<{ idx: number; x: number; y: number } | null>(null);
+  const chartRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     fetch(`/api/stock/${ticker}?range=${range}`)
@@ -92,19 +94,42 @@ export default function StockDeepDivePage({
     : 1;
   const chartRange = chartMax - chartMin || 1;
 
-  const chartPoints = chartData
-    .map((d, i) => {
-      const x = (i / Math.max(chartData.length - 1, 1)) * chartW;
-      const y =
-        chartH - ((d.close - chartMin) / chartRange) * (chartH - 20) - 10;
-      return `${x},${y}`;
-    })
-    .join(" ");
+  const chartPad = { top: 10, bottom: 10, left: 48, right: 8 };
+  const plotW = chartW - chartPad.left - chartPad.right;
+  const plotH = chartH - chartPad.top - chartPad.bottom;
+
+  const chartPointsArr = chartData.map((d, i) => {
+    const x = chartPad.left + (i / Math.max(chartData.length - 1, 1)) * plotW;
+    const y = chartPad.top + plotH - ((d.close - chartMin) / chartRange) * plotH;
+    return { x, y };
+  });
+
+  const chartPoints = chartPointsArr.map((p) => `${p.x},${p.y}`).join(" ");
 
   const areaPoints =
     chartData.length > 0
-      ? `0,${chartH} ${chartPoints} ${chartW},${chartH}`
+      ? `${chartPad.left},${chartH - chartPad.bottom} ${chartPoints} ${chartPad.left + plotW},${chartH - chartPad.bottom}`
       : "";
+
+  // Grid lines at 25%, 50%, 75%
+  const gridLines = [0.25, 0.5, 0.75].map((pct) => {
+    const val = chartMin + chartRange * (1 - pct);
+    const y = chartPad.top + plotH * pct;
+    return { y, val };
+  });
+
+  const handleChartInteraction = (clientX: number) => {
+    if (!chartRef.current || chartData.length < 2) return;
+    const rect = chartRef.current.getBoundingClientRect();
+    const svgX = ((clientX - rect.left) / rect.width) * chartW;
+    const plotX = svgX - chartPad.left;
+    const ratio = Math.max(0, Math.min(1, plotX / plotW));
+    const idx = Math.round(ratio * (chartData.length - 1));
+    const pt = chartPointsArr[idx];
+    if (pt) setCrosshair({ idx, x: pt.x, y: pt.y });
+  };
+
+  const clearCrosshair = () => setCrosshair(null);
 
   const events = [
     ...(data?.insiderTrades || []).slice(0, 3).map((t: any) => ({
@@ -199,25 +224,147 @@ export default function StockDeepDivePage({
       {chartData.length > 1 && (
         <div className="px-5 mb-5">
           <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
+            {/* Crosshair tooltip */}
+            {crosshair && chartData[crosshair.idx] && (
+              <div className="flex items-center justify-between mb-2 px-1">
+                <span className="font-mono text-[12px] text-text-muted">
+                  {chartData[crosshair.idx].date}
+                </span>
+                <span className="font-mono text-[14px] font-bold" style={{ color }}>
+                  ${chartData[crosshair.idx].close.toFixed(2)}
+                </span>
+              </div>
+            )}
             <svg
+              ref={chartRef}
               viewBox={`0 0 ${chartW} ${chartH}`}
-              className="w-full"
-              preserveAspectRatio="none"
+              className="w-full touch-none"
+              preserveAspectRatio="xMidYMid meet"
+              onMouseMove={(e) => handleChartInteraction(e.clientX)}
+              onMouseLeave={clearCrosshair}
+              onTouchMove={(e) => {
+                e.preventDefault();
+                handleChartInteraction(e.touches[0].clientX);
+              }}
+              onTouchEnd={clearCrosshair}
             >
               <defs>
                 <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+                  <stop offset="0%" stopColor={color} stopOpacity="0.18" />
                   <stop offset="100%" stopColor={color} stopOpacity="0" />
                 </linearGradient>
               </defs>
+
+              {/* Horizontal grid lines */}
+              {gridLines.map((gl, i) => (
+                <g key={i}>
+                  <line
+                    x1={chartPad.left}
+                    y1={gl.y}
+                    x2={chartPad.left + plotW}
+                    y2={gl.y}
+                    stroke="var(--border-hairline)"
+                    strokeWidth="0.8"
+                    strokeDasharray="4 3"
+                  />
+                  <text
+                    x={chartPad.left - 6}
+                    y={gl.y + 3}
+                    textAnchor="end"
+                    fill="var(--text-faint)"
+                    fontSize="8"
+                    fontFamily="monospace"
+                  >
+                    ${gl.val.toFixed(gl.val >= 100 ? 0 : 2)}
+                  </text>
+                </g>
+              ))}
+
+              {/* Y-axis labels: min and max */}
+              <text
+                x={chartPad.left - 6}
+                y={chartPad.top + 3}
+                textAnchor="end"
+                fill="var(--text-faint)"
+                fontSize="8"
+                fontFamily="monospace"
+              >
+                ${chartMax.toFixed(chartMax >= 100 ? 0 : 2)}
+              </text>
+              <text
+                x={chartPad.left - 6}
+                y={chartH - chartPad.bottom + 3}
+                textAnchor="end"
+                fill="var(--text-faint)"
+                fontSize="8"
+                fontFamily="monospace"
+              >
+                ${chartMin.toFixed(chartMin >= 100 ? 0 : 2)}
+              </text>
+
+              {/* Area fill */}
               <polygon points={areaPoints} fill="url(#areaGrad)" />
+
+              {/* Price line */}
               <polyline
                 points={chartPoints}
                 stroke={color}
                 strokeWidth="2"
                 fill="none"
                 strokeLinecap="round"
+                strokeLinejoin="round"
               />
+
+              {/* Current price dot at end of line */}
+              {chartPointsArr.length > 0 && (
+                <>
+                  <circle
+                    cx={chartPointsArr[chartPointsArr.length - 1].x}
+                    cy={chartPointsArr[chartPointsArr.length - 1].y}
+                    r="4"
+                    fill={color}
+                    opacity="0.25"
+                  />
+                  <circle
+                    cx={chartPointsArr[chartPointsArr.length - 1].x}
+                    cy={chartPointsArr[chartPointsArr.length - 1].y}
+                    r="2.5"
+                    fill={color}
+                  />
+                </>
+              )}
+
+              {/* Crosshair */}
+              {crosshair && (
+                <>
+                  <line
+                    x1={crosshair.x}
+                    y1={chartPad.top}
+                    x2={crosshair.x}
+                    y2={chartH - chartPad.bottom}
+                    stroke="var(--text-faint)"
+                    strokeWidth="0.8"
+                    strokeDasharray="3 2"
+                  />
+                  <line
+                    x1={chartPad.left}
+                    y1={crosshair.y}
+                    x2={chartPad.left + plotW}
+                    y2={crosshair.y}
+                    stroke="var(--text-faint)"
+                    strokeWidth="0.8"
+                    strokeDasharray="3 2"
+                  />
+                  <circle
+                    cx={crosshair.x}
+                    cy={crosshair.y}
+                    r="4"
+                    fill="var(--bg-app)"
+                    stroke={color}
+                    strokeWidth="2"
+                  />
+                </>
+              )}
             </svg>
             <div className="flex items-center gap-2 mt-3">
               {["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "5Y"].map((r) => (
