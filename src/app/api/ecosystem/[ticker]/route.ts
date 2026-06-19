@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEcosystemMap, getEcosystemPicks } from "@/lib/ingestion/ecosystem";
+import { getEcosystemMap, getEcosystemPicks, HARDCODED_ECOSYSTEM_TICKERS } from "@/lib/ingestion/ecosystem";
 import { getBatchQuotes } from "@/lib/ingestion/market-data";
 
 export async function GET(
@@ -25,6 +25,7 @@ export async function GET(
   return NextResponse.json({
     ticker: symbol,
     totalRelationships: ecosystem.edges.length,
+    isAiGenerated: !HARDCODED_ECOSYSTEM_TICKERS.includes(symbol),
     edges: ecosystem.edges.map((e) => ({
       ...e,
       quote: quotes.get(e.targetTicker) || null,

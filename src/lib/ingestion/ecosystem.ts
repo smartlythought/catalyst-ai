@@ -215,7 +215,14 @@ const KNOWN_ECOSYSTEMS: Record<
 };
 
 /**
- * Get ecosystem map for a ticker, combining known data with AI extraction
+ * List of tickers with hardcoded ecosystem data (used by the UI to
+ * distinguish curated vs AI-generated results).
+ */
+export const HARDCODED_ECOSYSTEM_TICKERS = Object.keys(KNOWN_ECOSYSTEMS);
+
+/**
+ * Get ecosystem map for a ticker, combining known data with AI extraction.
+ * When no hardcoded data exists, Gemini 2.5 Flash generates relationships on-the-fly.
  */
 export async function getEcosystemMap(ticker: string): Promise<EcosystemMap> {
   const symbol = ticker.toUpperCase();
@@ -224,22 +231,117 @@ export async function getEcosystemMap(ticker: string): Promise<EcosystemMap> {
   // Confidence based on signal tier: S=0.95, A=0.85, B=0.7, C=0.55
   const tierConfidence: Record<string, number> = { S: 0.95, A: 0.85, B: 0.7, C: 0.55 };
 
-  const edges: EcosystemEdge[] = known.map((k) => ({
-    sourceTicker: symbol,
-    targetTicker: k.ticker,
-    relationship: k.rel as EcosystemEdge["relationship"],
-    description: k.desc,
-    confidence: k.tier ? (tierConfidence[k.tier] ?? 0.7) : 0.9,
-    tier: k.tier,
-    category: k.category,
-  }));
+  let edges: EcosystemEdge[];
+
+  if (known.length > 0) {
+    // Use curated hardcoded data
+    edges = known.map((k) => ({
+      sourceTicker: symbol,
+      targetTicker: k.ticker,
+      relationship: k.rel as EcosystemEdge["relationship"],
+      description: k.desc,
+      confidence: k.tier ? (tierConfidence[k.tier] ?? 0.7) : 0.9,
+      tier: k.tier,
+      category: k.category,
+    }));
+  } else {
+    // No hardcoded data — generate via Gemini AI
+    edges = await generateEcosystemWithAI(symbol);
+  }
+
+  const relTypes = new Set(edges.map((e) => e.relationship)).size;
+  const sourceLabel = known.length > 0 ? "known" : "AI-generated";
 
   return {
     company: symbol,
     ticker: symbol,
     edges,
-    summary: `${symbol} has ${edges.length} known ecosystem relationships across ${new Set(edges.map((e) => e.relationship)).size} relationship types.`,
+    summary: `${symbol} has ${edges.length} ${sourceLabel} ecosystem relationships across ${relTypes} relationship type${relTypes !== 1 ? "s" : ""}.`,
   };
+}
+
+/**
+ * Generate ecosystem relationships for any ticker using Gemini 2.5 Flash.
+ * Returns 10-20 relationships with suppliers, customers, partners, and competitors.
+ */
+async function generateEcosystemWithAI(symbol: string): Promise<EcosystemEdge[]> {
+  if (!GEMINI_KEY) return [];
+
+  const prompt = `You are a financial analyst. For the publicly traded company with ticker "${symbol}", identify its key business ecosystem relationships.
+
+Return a JSON array of 10-20 relationships. Each object must have:
+- "targetTicker": stock ticker of the related company (must be listed on US exchanges — NYSE, NASDAQ)
+- "relationship": one of "supplier", "customer", "partner", "competitor", "subsidiary", "investor"
+- "description": one concise sentence describing the relationship
+- "tier": signal strength — "S" (critical/strategic), "A" (important), "B" (moderate), "C" (minor)
+- "category": a short label like "Manufacturing", "Cloud", "Semiconductor", "Competitor", "Software", etc.
+
+Rules:
+- Only include companies with valid US stock tickers. No private companies, no foreign-only listings.
+- Focus on the most meaningful relationships — prioritize tier S and A.
+- Include a mix of relationship types: suppliers, customers, partners, and competitors.
+- Be accurate about the nature of each relationship.
+- Use well-known, actively traded tickers only.
+
+Return ONLY the JSON array, no other text.`;
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.3,
+            responseMimeType: "application/json",
+          },
+        }),
+      }
+    );
+
+    if (!res.ok) return [];
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) return [];
+
+    const parsed = JSON.parse(text);
+    const tierConfidence: Record<string, number> = { S: 0.95, A: 0.85, B: 0.7, C: 0.55 };
+    const validRelationships = new Set(["supplier", "customer", "partner", "competitor", "subsidiary", "investor"]);
+    const validTiers = new Set(["S", "A", "B", "C"]);
+
+    return (Array.isArray(parsed) ? parsed : [])
+      .filter(
+        (e: { targetTicker?: string; relationship?: string }) =>
+          e.targetTicker &&
+          typeof e.targetTicker === "string" &&
+          /^[A-Z]{1,5}$/.test(e.targetTicker) &&
+          validRelationships.has(e.relationship || "")
+      )
+      .map(
+        (e: {
+          targetTicker: string;
+          relationship: string;
+          description: string;
+          tier?: string;
+          category?: string;
+        }) => {
+          const tier = validTiers.has(e.tier || "") ? (e.tier as SignalTier) : "B";
+          return {
+            sourceTicker: symbol,
+            targetTicker: e.targetTicker,
+            relationship: e.relationship as EcosystemEdge["relationship"],
+            description: e.description || "",
+            confidence: tierConfidence[tier] ?? 0.7,
+            tier,
+            category: e.category || undefined,
+          };
+        }
+      );
+  } catch {
+    return [];
+  }
 }
 
 /**

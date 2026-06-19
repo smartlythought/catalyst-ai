@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
@@ -42,10 +43,12 @@ interface PulseData {
 }
 
 export default function DiscoverPage() {
+  const router = useRouter();
   const [pulse, setPulse] = useState<PulseData | null>(null);
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [tab, setTab] = useState<"gainers" | "losers" | "active">("gainers");
   const [loading, setLoading] = useState(true);
+  const [exploreTicker, setExploreTicker] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -125,6 +128,55 @@ export default function DiscoverPage() {
           </div>
         </div>
       )}
+
+      {/* Daily Top 10 Picks */}
+      <div className="px-5 mb-5">
+        <Link
+          href="/picks"
+          className="block bg-surface-1 border border-accent-brand/20 rounded-[18px] p-4 active:opacity-90 transition-opacity"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(232, 116, 59, 0.08), rgba(232, 116, 59, 0.02))",
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-[40px] h-[40px] rounded-full bg-accent-brand/10 border border-accent-brand/20 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path
+                  d="M10 2L12.5 7.5L18 8.5L14 12.5L15 18L10 15.5L5 18L6 12.5L2 8.5L7.5 7.5L10 2Z"
+                  stroke="var(--accent-brand)"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="text-[15px] font-bold text-accent-brand">
+                Daily Top 10 Picks
+              </div>
+              <div className="text-[12px] text-text-muted mt-0.5">
+                AI-recommended buy &amp; sell calls with entry, target, and stop
+                loss
+              </div>
+            </div>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              className="shrink-0"
+            >
+              <path
+                d="M6 4L10 8L6 12"
+                stroke="var(--accent-brand)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        </Link>
+      </div>
 
       {/* Sector Heatmap */}
       {pulse?.sectors && pulse.sectors.length > 0 && (
@@ -340,6 +392,40 @@ export default function DiscoverPage() {
             </Link>
           ))}
         </div>
+      </div>
+
+      {/* Explore Any Stock Ecosystem */}
+      <div className="px-5 mb-5">
+        <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+          Explore Any Stock
+        </h2>
+        <p className="text-[12px] text-text-muted mb-3">
+          Enter any ticker to generate an AI-powered ecosystem map
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const t = exploreTicker.trim().toUpperCase();
+            if (t) router.push(`/ecosystem/${t}`);
+          }}
+          className="flex gap-2"
+        >
+          <input
+            type="text"
+            value={exploreTicker}
+            onChange={(e) => setExploreTicker(e.target.value.toUpperCase())}
+            placeholder="e.g. CRWD, SNOW, PLTR"
+            maxLength={5}
+            className="flex-1 bg-surface-1 border border-border-1 rounded-[12px] px-4 py-2.5 font-mono text-[14px] placeholder:text-text-faint outline-none focus:border-accent-brand/50 transition-colors uppercase tracking-wide"
+          />
+          <button
+            type="submit"
+            disabled={!exploreTicker.trim()}
+            className="bg-accent-brand text-white font-medium text-[13px] px-5 py-2.5 rounded-[12px] disabled:opacity-40 transition-opacity"
+          >
+            Explore
+          </button>
+        </form>
       </div>
 
       <Disclaimer />

@@ -35,6 +35,7 @@ interface EcosystemPicks {
 interface EcosystemData {
   ticker: string;
   totalRelationships: number;
+  isAiGenerated: boolean;
   edges: EcosystemEdge[];
   picks: EcosystemPicks;
   summary: string;
@@ -372,7 +373,9 @@ export default function EcosystemPage({
           {symbol} Ecosystem
         </h1>
         <p className="text-[14px] text-text-muted mt-1">
-          {data.totalRelationships} companies in the network
+          {data.isAiGenerated
+            ? `AI-generated · ${data.totalRelationships} companies`
+            : `${data.totalRelationships} companies in the network`}
         </p>
       </header>
 
