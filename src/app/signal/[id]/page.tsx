@@ -72,17 +72,17 @@ export default function SignalDetailPage({
 
   const heroGradient =
     signal.call === "BUY"
-      ? "linear-gradient(165deg, #13201A, #0F141A)"
+      ? "var(--hero-buy-bg)"
       : signal.call === "REDUCE"
-        ? "linear-gradient(165deg, #20141A, #190F14)"
-        : "linear-gradient(165deg, #16191F, #0F1218)";
+        ? "var(--hero-reduce-bg)"
+        : "var(--hero-watch-bg)";
 
   const heroBorder =
     signal.call === "BUY"
-      ? "#1C3328"
+      ? "var(--hero-buy-border)"
       : signal.call === "REDUCE"
-        ? "#3A1C26"
-        : "#232A36";
+        ? "var(--hero-reduce-border)"
+        : "var(--hero-watch-border)";
 
   return (
     <div className="min-h-dvh pb-24">

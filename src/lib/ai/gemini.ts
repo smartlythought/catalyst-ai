@@ -78,7 +78,11 @@ function buildPrompt(input: SignalInput): string {
   }
   if (input.analystConsensus) {
     const ac = input.analystConsensus;
-    prompt += `\nANALYST CONSENSUS: ${ac.buy} Buy / ${ac.hold} Hold / ${ac.sell} Sell. Avg PT: $${ac.avgTarget}\n`;
+    prompt += `\nANALYST CONSENSUS: ${ac.buy} Buy / ${ac.hold} Hold / ${ac.sell} Sell.`;
+    if (ac.avgTarget > 0) {
+      prompt += ` Avg Price Target: $${ac.avgTarget.toFixed(2)}`;
+    }
+    prompt += `\n`;
   }
   if (input.recentPriceAction) {
     const rpa = input.recentPriceAction;

@@ -15,6 +15,14 @@ interface NewsItem {
   sentiment: "positive" | "negative" | "neutral";
 }
 
+interface EcosystemEdge {
+  targetTicker: string;
+  relationship: string;
+  description: string;
+  tier?: string;
+  category?: string;
+}
+
 const eventDotColors: Record<string, string> = {
   INSIDER: "var(--pos-green)",
   UPGRADE: "#53BDEB",
@@ -27,11 +35,28 @@ const eventDotColors: Record<string, string> = {
   NEWS: "var(--neutral-watch)",
 };
 
+const REL_COLORS: Record<string, { bg: string; text: string }> = {
+  supplier: { bg: "rgba(59, 130, 246, 0.12)", text: "#3B82F6" },
+  customer: { bg: "rgba(22, 199, 132, 0.12)", text: "var(--pos-green-bright)" },
+  partner: { bg: "rgba(232, 116, 59, 0.12)", text: "var(--accent-brand)" },
+  competitor: { bg: "rgba(234, 57, 67, 0.12)", text: "var(--neg-red-bright)" },
+  investor: { bg: "rgba(168, 85, 247, 0.12)", text: "#A855F7" },
+  subsidiary: { bg: "rgba(148, 163, 184, 0.12)", text: "var(--text-muted)" },
+};
+
+const TIER_COLORS: Record<string, string> = {
+  S: "#E8743B",
+  A: "#16C784",
+  B: "#3B82F6",
+  C: "var(--text-faint)",
+};
+
 interface StockData {
   symbol: string;
   quote: any;
   profile: any;
   analysts: any;
+  priceTarget: { targetHigh: number; targetLow: number; targetMean: number; targetMedian: number } | null;
   prices: { date: string; close: number; volume: number }[];
   insiderTrades: any[];
   filings: any[];
@@ -49,6 +74,9 @@ export default function StockDeepDivePage({
   const [range, setRange] = useState("1M");
   const [onWatchlist, setOnWatchlist] = useState(false);
   const [crosshair, setCrosshair] = useState<{ idx: number; x: number; y: number } | null>(null);
+  const [ecosystem, setEcosystem] = useState<EcosystemEdge[]>([]);
+  const [ecoLoading, setEcoLoading] = useState(false);
+  const [ecoLoaded, setEcoLoaded] = useState(false);
   const chartRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -63,6 +91,19 @@ export default function StockDeepDivePage({
       .then((d) => setNews(d.news || []))
       .catch(() => {});
   }, [ticker, range]);
+
+  function loadEcosystem() {
+    if (ecoLoaded) return;
+    setEcoLoading(true);
+    fetch(`/api/ecosystem/${ticker}`)
+      .then((r) => r.json())
+      .then((d) => setEcosystem(d.edges || []))
+      .catch(() => {})
+      .finally(() => {
+        setEcoLoading(false);
+        setEcoLoaded(true);
+      });
+  }
 
   async function toggleWatchlist() {
     const method = onWatchlist ? "DELETE" : "POST";
@@ -444,6 +485,75 @@ export default function StockDeepDivePage({
         </div>
       )}
 
+      {/* Analyst price target gauge */}
+      {data?.priceTarget && data.priceTarget.targetMean > 0 && price > 0 && (
+        <div className="px-5 mb-5">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+            Analyst price target
+          </h2>
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[11px] text-text-muted">Low</div>
+                <div className="font-mono text-[14px] font-semibold text-neg-red">
+                  ${data.priceTarget.targetLow.toFixed(0)}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[11px] text-text-muted">Average</div>
+                <div className="font-mono text-[20px] font-bold text-accent-brand">
+                  ${data.priceTarget.targetMean.toFixed(0)}
+                </div>
+                <div className="text-[11px] font-mono" style={{ color: data.priceTarget.targetMean > price ? "var(--pos-green-bright)" : "var(--neg-red-bright)" }}>
+                  {data.priceTarget.targetMean > price ? "+" : ""}
+                  {(((data.priceTarget.targetMean - price) / price) * 100).toFixed(1)}%
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[11px] text-text-muted">High</div>
+                <div className="font-mono text-[14px] font-semibold text-pos-green">
+                  ${data.priceTarget.targetHigh.toFixed(0)}
+                </div>
+              </div>
+            </div>
+            {/* Visual gauge bar */}
+            {(() => {
+              const low = data.priceTarget.targetLow;
+              const high = data.priceTarget.targetHigh;
+              const gaugeRange = high - low || 1;
+              const currentPct = Math.max(0, Math.min(100, ((price - low) / gaugeRange) * 100));
+              const meanPct = Math.max(0, Math.min(100, ((data.priceTarget.targetMean - low) / gaugeRange) * 100));
+              return (
+                <div className="relative h-[8px] rounded-full bg-surface-2 overflow-visible">
+                  <div
+                    className="absolute h-full rounded-full"
+                    style={{
+                      width: `${meanPct}%`,
+                      background: "linear-gradient(90deg, var(--neg-red), var(--neutral-watch), var(--pos-green))",
+                      opacity: 0.3,
+                    }}
+                  />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-[12px] h-[12px] rounded-full bg-accent-brand border-2 border-bg-app"
+                    style={{ left: `calc(${currentPct}% - 6px)` }}
+                    title={`Current: $${price.toFixed(2)}`}
+                  />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-[3px] h-[14px] rounded bg-text-muted"
+                    style={{ left: `calc(${meanPct}% - 1.5px)` }}
+                    title={`Target: $${data.priceTarget.targetMean.toFixed(0)}`}
+                  />
+                </div>
+              );
+            })()}
+            <div className="flex justify-between mt-2">
+              <span className="text-[9px] text-text-faint font-mono">Current: ${price.toFixed(0)}</span>
+              <span className="text-[9px] text-text-faint font-mono">Target: ${data.priceTarget.targetMean.toFixed(0)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Catalyst timeline */}
       {events.length > 0 && (
         <div className="px-5 mb-5">
@@ -590,6 +700,117 @@ export default function StockDeepDivePage({
         </div>
       )}
 
+      {/* Volume chart */}
+      {chartData.length > 1 && (
+        <div className="px-5 mb-5">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+            Volume
+          </h2>
+          <div className="bg-surface-1 border border-border-1 rounded-[14px] p-3">
+            <svg viewBox={`0 0 ${chartW} 50`} className="w-full" preserveAspectRatio="xMidYMid meet">
+              {(() => {
+                const volumes = chartData.map((d) => d.volume || 0);
+                const maxVol = Math.max(...volumes) || 1;
+                const barW = Math.max(1, plotW / volumes.length - 1);
+                return volumes.map((v, i) => {
+                  const x = chartPad.left + (i / Math.max(volumes.length - 1, 1)) * plotW - barW / 2;
+                  const h = (v / maxVol) * 36;
+                  return (
+                    <rect
+                      key={i}
+                      x={x}
+                      y={44 - h}
+                      width={barW}
+                      height={h}
+                      rx="1"
+                      fill={color}
+                      opacity={crosshair?.idx === i ? 0.8 : 0.3}
+                    />
+                  );
+                });
+              })()}
+            </svg>
+          </div>
+        </div>
+      )}
+
+      {/* Ecosystem */}
+      <div className="px-5 mb-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px]">
+            Ecosystem
+          </h2>
+          <Link
+            href={`/ecosystem/${ticker.toUpperCase()}`}
+            className="text-[11px] text-accent-brand font-medium"
+          >
+            Full map &rsaquo;
+          </Link>
+        </div>
+        {!ecoLoaded && !ecoLoading && (
+          <button
+            onClick={loadEcosystem}
+            className="w-full bg-surface-1 border border-border-1 rounded-[14px] p-4 flex items-center justify-center gap-2 text-[13px] font-medium text-accent-brand"
+          >
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+              <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M10 6v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            Load AI Ecosystem Analysis
+          </button>
+        )}
+        {ecoLoading && (
+          <div className="bg-surface-1 border border-border-1 rounded-[14px] p-6 flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-accent-brand border-t-transparent rounded-full animate-spin" />
+            <span className="ml-3 text-[13px] text-text-muted">Analyzing ecosystem...</span>
+          </div>
+        )}
+        {ecoLoaded && ecosystem.length > 0 && (
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden">
+            {ecosystem.slice(0, 6).map((edge, i) => {
+              const relStyle = REL_COLORS[edge.relationship] || REL_COLORS.partner;
+              const tierColor = TIER_COLORS[edge.tier || "C"] || TIER_COLORS.C;
+              return (
+                <Link
+                  key={edge.targetTicker}
+                  href={`/stock/${edge.targetTicker}`}
+                  className={`flex items-center gap-3 px-4 py-3 ${i < Math.min(ecosystem.length, 6) - 1 ? "border-b border-border-hairline" : ""}`}
+                >
+                  <div className="w-[36px] h-[36px] rounded-[10px] bg-surface-2 border border-border-1 flex items-center justify-center font-mono text-[11px] font-bold text-text-muted">
+                    {edge.targetTicker}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span
+                        className="font-mono text-[9px] font-medium tracking-[0.5px] uppercase px-1.5 py-0.5 rounded"
+                        style={{ backgroundColor: relStyle.bg, color: relStyle.text }}
+                      >
+                        {edge.relationship}
+                      </span>
+                      {edge.tier && (
+                        <span
+                          className="font-mono text-[9px] font-bold"
+                          style={{ color: tierColor }}
+                        >
+                          {edge.tier}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-text-muted truncate">{edge.description}</p>
+                  </div>
+                  <span className="text-[14px] text-text-faint shrink-0">&rsaquo;</span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+        {ecoLoaded && ecosystem.length === 0 && (
+          <div className="bg-surface-1 border border-border-1 rounded-[14px] p-4 text-center text-[13px] text-text-muted">
+            No ecosystem data available
+          </div>
+        )}
+      </div>
+
       {/* News feed */}
       {news.length > 0 && (
         <div className="px-5 mb-5">
@@ -636,7 +857,7 @@ export default function StockDeepDivePage({
       )}
 
       {/* Action buttons */}
-      <div className="px-5 mb-5 flex gap-3">
+      <div className="px-5 mb-5 flex gap-2">
         <Link
           href={`/chat?ticker=${ticker.toUpperCase()}`}
           className="flex-1 h-[48px] rounded-[14px] bg-accent-brand text-white font-bold text-[14px] flex items-center justify-center gap-2"
@@ -651,11 +872,23 @@ export default function StockDeepDivePage({
           </svg>
           Ask AI
         </Link>
+        <Link
+          href={`/ecosystem/${ticker.toUpperCase()}`}
+          className="h-[48px] px-4 rounded-[14px] border border-border-1 bg-surface-1 font-bold text-[13px] text-text-secondary flex items-center justify-center gap-1.5"
+        >
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="4" cy="16" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="16" cy="16" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M10 6.5V10M10 10L5 13.5M10 10L15 13.5" stroke="currentColor" strokeWidth="1.2" />
+          </svg>
+          Ecosystem
+        </Link>
         <a
           href={`https://wa.me/?text=${encodeURIComponent(`Check out ${ticker.toUpperCase()} at $${price.toFixed(2)} on Catalyst`)}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="h-[48px] px-5 rounded-[14px] border border-border-1 bg-surface-1 font-bold text-[14px] text-text-secondary flex items-center justify-center"
+          className="h-[48px] px-4 rounded-[14px] border border-border-1 bg-surface-1 font-bold text-[13px] text-text-secondary flex items-center justify-center"
         >
           Share
         </a>

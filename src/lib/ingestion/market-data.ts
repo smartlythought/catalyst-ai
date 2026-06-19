@@ -26,6 +26,14 @@ interface AnalystRating {
   period: string;
 }
 
+interface PriceTarget {
+  targetHigh: number;
+  targetLow: number;
+  targetMean: number;
+  targetMedian: number;
+  lastUpdated: string;
+}
+
 interface CompanyProfile {
   symbol: string;
   name: string;
@@ -141,6 +149,31 @@ export async function getAnalystRatings(
       strongBuy: latest.strongBuy,
       strongSell: latest.strongSell,
       period: latest.period,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getPriceTarget(
+  symbol: string
+): Promise<PriceTarget | null> {
+  if (!FINNHUB_KEY) return null;
+
+  try {
+    const res = await fetch(
+      `https://finnhub.io/api/v1/stock/price-target?symbol=${symbol}&token=${FINNHUB_KEY}`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.targetMean && !data.targetMedian) return null;
+
+    return {
+      targetHigh: data.targetHigh || 0,
+      targetLow: data.targetLow || 0,
+      targetMean: data.targetMean || 0,
+      targetMedian: data.targetMedian || 0,
+      lastUpdated: data.lastUpdated || "",
     };
   } catch {
     return null;

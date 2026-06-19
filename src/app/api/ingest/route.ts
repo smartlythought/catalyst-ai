@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getRecentForm4, getRecent8K } from "@/lib/ingestion/sec-edgar";
-import { getAnalystRatings, getFMPStableQuote } from "@/lib/ingestion/market-data";
+import { getAnalystRatings, getPriceTarget, getFMPStableQuote } from "@/lib/ingestion/market-data";
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { generateCall } from "@/lib/ai/gemini";
 import {
@@ -219,9 +219,12 @@ export async function POST(request: NextRequest) {
     await Promise.all(
       batch.map(async (candidate) => {
         try {
-          const analysts = await getAnalystRatings(candidate.symbol).catch(
-            () => null
-          );
+          const [analysts, priceTarget] = await Promise.all([
+            getAnalystRatings(candidate.symbol).catch(() => null),
+            getPriceTarget(candidate.symbol).catch(() => null),
+          ]);
+
+          const avgTarget = priceTarget?.targetMean || priceTarget?.targetMedian || 0;
 
           const aiResult = await generateCall({
             ticker: candidate.symbol,
@@ -233,7 +236,7 @@ export async function POST(request: NextRequest) {
                   buy: analysts.buy + analysts.strongBuy,
                   hold: analysts.hold,
                   sell: analysts.sell + analysts.strongSell,
-                  avgTarget: 0,
+                  avgTarget,
                 }
               : undefined,
           });

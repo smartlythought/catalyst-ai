@@ -59,32 +59,45 @@ Include a mix of:
 
 Return ONLY the JSON array, no markdown or extra text.`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+    const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+    let rawText = "[]";
+    let geminiOk = false;
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.7,
-        },
-      }),
-    });
+    for (const model of models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+        const geminiRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.7,
+            },
+          }),
+        });
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error("Gemini API error:", errText);
+        if (!geminiRes.ok) {
+          console.error(`${model} error:`, await geminiRes.text().catch(() => ""));
+          continue;
+        }
+
+        const geminiData = await geminiRes.json();
+        rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
+        geminiOk = true;
+        break;
+      } catch (e) {
+        console.error(`${model} fetch failed:`, e);
+      }
+    }
+
+    if (!geminiOk) {
       return NextResponse.json(
         { error: "Failed to generate picks" },
         { status: 502 }
       );
     }
-
-    const geminiData = await geminiRes.json();
-    const rawText =
-      geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
 
     let picks: Pick[];
     try {

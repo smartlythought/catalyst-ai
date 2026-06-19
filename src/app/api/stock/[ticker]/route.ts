@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getQuote, getCompanyProfile, getAnalystRatings, getHistoricalPrices } from "@/lib/ingestion/market-data";
+import { getQuote, getCompanyProfile, getAnalystRatings, getPriceTarget, getHistoricalPrices } from "@/lib/ingestion/market-data";
 import { getRecentForm4, getRecent8K } from "@/lib/ingestion/sec-edgar";
 
 const CIK_MAP: Record<string, string> = {
@@ -37,11 +37,12 @@ export async function GET(
   const range = request.nextUrl.searchParams.get("range") || "1M";
   const days = RANGE_TO_DAYS[range] || 30;
 
-  const [quote, profile, analysts, prices, form4s, filings8k] =
+  const [quote, profile, analysts, priceTarget, prices, form4s, filings8k] =
     await Promise.all([
       getQuote(symbol).catch(() => null),
       getCompanyProfile(symbol).catch(() => null),
       getAnalystRatings(symbol).catch(() => null),
+      getPriceTarget(symbol).catch(() => null),
       getHistoricalPrices(symbol, days).catch(() => []),
       cik ? getRecentForm4(cik).catch(() => []) : Promise.resolve([]),
       cik ? getRecent8K(cik).catch(() => []) : Promise.resolve([]),
@@ -52,6 +53,7 @@ export async function GET(
     quote,
     profile,
     analysts,
+    priceTarget,
     prices,
     insiderTrades: form4s.slice(0, 10),
     filings: filings8k.slice(0, 5),

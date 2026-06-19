@@ -285,25 +285,37 @@ Rules:
 
 Return ONLY the JSON array, no other text.`;
 
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.3,
-            responseMimeType: "application/json",
-          },
-        }),
-      }
-    );
+  const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
 
-    if (!res.ok) return [];
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  try {
+    let text: string | null = null;
+
+    for (const model of models) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 0.3,
+                responseMimeType: "application/json",
+              },
+            }),
+          }
+        );
+
+        if (!res.ok) continue;
+        const data = await res.json();
+        text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) break;
+      } catch {
+        continue;
+      }
+    }
+
     if (!text) return [];
 
     const parsed = JSON.parse(text);
@@ -316,7 +328,7 @@ Return ONLY the JSON array, no other text.`;
         (e: { targetTicker?: string; relationship?: string }) =>
           e.targetTicker &&
           typeof e.targetTicker === "string" &&
-          /^[A-Z]{1,5}$/.test(e.targetTicker) &&
+          /^[A-Z]{1,6}$/.test(e.targetTicker.toUpperCase().replace(/[^A-Z]/g, "")) &&
           validRelationships.has(e.relationship || "")
       )
       .map(
@@ -330,7 +342,7 @@ Return ONLY the JSON array, no other text.`;
           const tier = validTiers.has(e.tier || "") ? (e.tier as SignalTier) : "B";
           return {
             sourceTicker: symbol,
-            targetTicker: e.targetTicker,
+            targetTicker: e.targetTicker.toUpperCase(),
             relationship: e.relationship as EcosystemEdge["relationship"],
             description: e.description || "",
             confidence: tierConfidence[tier] ?? 0.7,
