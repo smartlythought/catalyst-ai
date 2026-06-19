@@ -13,6 +13,8 @@ export default function AccountPage() {
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [whatsappSaving, setWhatsappSaving] = useState(false);
   const [whatsappSaved, setWhatsappSaved] = useState(false);
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -51,6 +53,32 @@ export default function AccountPage() {
     setWhatsappSaving(false);
     setWhatsappSaved(true);
     setTimeout(() => setWhatsappSaved(false), 2000);
+  }
+
+  async function sendTestAlert() {
+    setTestSending(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticker: "NVDA",
+          call: "BUY",
+          conviction: 92,
+          price: 210.69,
+          entry: 208.0,
+          target: 235.0,
+          stop: 195.0,
+          why: "This is a test alert from Catalyst. If you received this, WhatsApp alerts are working!",
+        }),
+      });
+      setTestResult(res.ok ? "ok" : "fail");
+    } catch {
+      setTestResult("fail");
+    }
+    setTestSending(false);
+    setTimeout(() => setTestResult(null), 4000);
   }
 
   async function handleSignOut() {
@@ -175,9 +203,37 @@ export default function AccountPage() {
               {whatsappSaving ? "..." : whatsappSaved ? "Saved" : "Save"}
             </button>
           </div>
-          <p className="text-[11px] text-text-faint mt-2">
-            Enter your number with country code to receive AI signal alerts via WhatsApp.
-          </p>
+          <div className="flex items-center justify-between mt-3">
+            <p className="text-[11px] text-text-faint">
+              Enter number with country code (e.g. +91...)
+            </p>
+            {profile?.whatsapp_number && (
+              <button
+                onClick={sendTestAlert}
+                disabled={testSending}
+                className={`text-[11px] font-bold px-3 py-1 rounded-[8px] transition-all ${
+                  testResult === "ok"
+                    ? "bg-pos-green/15 text-pos-green"
+                    : testResult === "fail"
+                      ? "bg-neg-red/15 text-neg-red"
+                      : "bg-accent-brand/10 text-accent-brand"
+                }`}
+              >
+                {testSending
+                  ? "Sending..."
+                  : testResult === "ok"
+                    ? "Sent! Check WhatsApp"
+                    : testResult === "fail"
+                      ? "Failed"
+                      : "Send test alert"}
+              </button>
+            )}
+          </div>
+          {!profile?.whatsapp_number && (
+            <p className="text-[11px] text-accent-brand mt-1 font-medium">
+              Save your number, then enable WhatsApp in Alert settings.
+            </p>
+          )}
         </div>
 
         {/* Quick actions */}

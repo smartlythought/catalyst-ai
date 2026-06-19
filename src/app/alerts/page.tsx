@@ -335,14 +335,29 @@ export default function AlertsPage() {
               onToggle={() => toggleChannel("push")}
             />
           </div>
-          <div className="flex items-center justify-between px-4 py-3.5 border-b border-border-hairline">
-            <div>
-              <div className="text-[15px] font-medium">WhatsApp</div>
+          <div className="px-4 py-3.5 border-b border-border-hairline">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[15px] font-medium">WhatsApp</div>
+              </div>
+              <Toggle
+                enabled={settings.channels.whatsapp}
+                onToggle={() => toggleChannel("whatsapp")}
+              />
             </div>
-            <Toggle
-              enabled={settings.channels.whatsapp}
-              onToggle={() => toggleChannel("whatsapp")}
-            />
+            {settings.channels.whatsapp && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[11px] text-text-faint">
+                  Set your number in
+                </span>
+                <Link
+                  href="/account"
+                  className="text-[11px] text-accent-brand font-medium"
+                >
+                  Account &rsaquo;
+                </Link>
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-between px-4 py-3.5">
             <div>

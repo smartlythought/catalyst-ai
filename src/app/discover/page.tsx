@@ -241,6 +241,62 @@ export default function DiscoverPage() {
         </Link>
       </div>
 
+      {/* Upcoming IPOs */}
+      <div className="px-5 mb-5">
+        <Link
+          href="/ipo"
+          className="block bg-surface-1 border border-border-1 rounded-[18px] p-4 active:opacity-90 transition-opacity hover:border-accent-brand/30"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-[40px] h-[40px] rounded-full bg-surface-2 border border-border-1 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M10 3V17M10 3L6 7M10 3L14 7" stroke="var(--pos-green-bright)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <rect x="3" y="14" width="14" height="3" rx="1" stroke="var(--pos-green-bright)" strokeWidth="1.5"/>
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="text-[15px] font-bold" style={{ color: "var(--pos-green-bright)" }}>
+                Upcoming IPOs
+              </div>
+              <div className="text-[12px] text-text-muted mt-0.5">
+                AI-analyzed new listings with buy/avoid recommendations
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0">
+              <path d="M6 4L10 8L6 12" stroke="var(--text-faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </Link>
+      </div>
+
+      {/* High-Yield Picks */}
+      <div className="px-5 mb-5">
+        <Link
+          href="/penny"
+          className="block bg-surface-1 border border-border-1 rounded-[18px] p-4 active:opacity-90 transition-opacity hover:border-accent-brand/30"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-[40px] h-[40px] rounded-full bg-surface-2 border border-border-1 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <circle cx="10" cy="10" r="7" stroke="#F59E0B" strokeWidth="1.5"/>
+                <path d="M10 6V14M8 8H12M8 12H12" stroke="#F59E0B" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="text-[15px] font-bold" style={{ color: "#F59E0B" }}>
+                High-Yield Picks
+              </div>
+              <div className="text-[12px] text-text-muted mt-0.5">
+                Small-cap stocks under $20 with strong growth potential
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0">
+              <path d="M6 4L10 8L6 12" stroke="var(--text-faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </Link>
+      </div>
+
       {/* Sector Heatmap */}
       {pulse?.sectors && pulse.sectors.length > 0 && (() => {
         const maxAbsChange = Math.max(
