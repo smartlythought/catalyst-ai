@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -53,6 +53,29 @@ export default function OnboardingPage() {
   const [risk, setRisk] = useState("");
   const [capital, setCapital] = useState("");
   const [saving, setSaving] = useState(false);
+  const [isEdit, setIsEdit] = useState(false);
+
+  useEffect(() => {
+    async function loadExisting() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("goal, risk_tolerance, capital_range, onboarding_completed")
+        .eq("id", user.id)
+        .single();
+
+      if (profile?.onboarding_completed) {
+        setIsEdit(true);
+        if (profile.goal) setGoal(profile.goal);
+        if (profile.risk_tolerance) setRisk(profile.risk_tolerance);
+        if (profile.capital_range) setCapital(profile.capital_range);
+      }
+    }
+    loadExisting();
+  }, []);
 
   const canAdvance =
     (step === 0 && goal) ||
@@ -125,7 +148,7 @@ export default function OnboardingPage() {
         {step === 0 && (
           <>
             <h1 className="text-[28px] font-extrabold tracking-[-0.6px] mb-6">
-              What are you here to do?
+              {isEdit ? "Update your goal" : "What are you here to do?"}
             </h1>
             <div className="flex flex-col gap-3">
               {goals.map((g) => (

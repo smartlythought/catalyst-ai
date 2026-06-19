@@ -36,8 +36,8 @@ export default function SearchPage() {
       return;
     }
 
+    setLoading(true);
     debounceRef.current = setTimeout(async () => {
-      setLoading(true);
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
         const data = await res.json();
@@ -46,7 +46,7 @@ export default function SearchPage() {
         setResults([]);
       }
       setLoading(false);
-    }, 300);
+    }, 150);
   }, [query]);
 
   function saveRecent(symbol: string) {

@@ -6,7 +6,7 @@ import { getActiveCalls } from "@/lib/supabase/queries";
 import { getBatchQuotes } from "@/lib/ingestion/market-data";
 import { MOCK_SIGNALS, getTodayDate } from "@/lib/mock-data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export default async function HomePage() {
   let signals = await getActiveCalls().catch(() => []);

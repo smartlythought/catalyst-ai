@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { TabBar } from "@/components/tab-bar";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AccountPage() {
   const router = useRouter();
@@ -147,6 +148,11 @@ export default function AccountPage() {
               <span className="text-[14px] text-text-faint">&rsaquo;</span>
             </a>
           ))}
+        </div>
+
+        {/* Appearance */}
+        <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden mb-5">
+          <ThemeToggle />
         </div>
 
         {/* App info */}

@@ -49,7 +49,15 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${manrope.variable} ${ibmPlexMono.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("catalyst_theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="min-h-dvh bg-bg-app text-text-primary font-sans antialiased">
         {children}
       </body>
