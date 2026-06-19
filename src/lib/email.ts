@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import { createServiceClient } from "@/lib/supabase/server";
 
-const FROM_EMAIL = process.env.EMAIL_FROM || "Catalyst <alerts@catalyst.claudeo.ai>";
+const FROM_EMAIL = process.env.EMAIL_FROM || "Catalyst <alerts@claudeo.ai>";
 
 let _resend: Resend | null = null;
 function getResend(): Resend | null {
