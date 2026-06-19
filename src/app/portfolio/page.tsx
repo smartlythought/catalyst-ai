@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TabBar } from "@/components/tab-bar";
+import { StockSearchInput } from "@/components/stock-search-input";
 import { Disclaimer } from "@/components/disclaimer";
 
 interface Holding {
@@ -19,6 +20,18 @@ interface Holding {
   pnlPercent: number;
 }
 
+interface AdviceItem {
+  ticker: string;
+  action: "HOLD" | "ADD" | "TRIM" | "EXIT";
+  reason: string;
+  urgency: "low" | "medium" | "high";
+}
+
+interface PortfolioAdvice {
+  advice: AdviceItem[];
+  summary: string;
+}
+
 export default function PortfolioPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [totalValue, setTotalValue] = useState(0);
@@ -30,6 +43,9 @@ export default function PortfolioPage() {
   const [addShares, setAddShares] = useState("");
   const [addCost, setAddCost] = useState("");
   const [saving, setSaving] = useState(false);
+  const [advice, setAdvice] = useState<PortfolioAdvice | null>(null);
+  const [adviceLoading, setAdviceLoading] = useState(false);
+  const [adviceError, setAdviceError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -82,6 +98,38 @@ export default function PortfolioPage() {
   async function removeHolding(symbol: string) {
     await fetch(`/api/portfolio?symbol=${symbol}`, { method: "DELETE" });
     setHoldings(holdings.filter((h) => h.ticker !== symbol));
+  }
+
+  async function fetchAdvice() {
+    setAdviceLoading(true);
+    setAdviceError(null);
+    try {
+      const res = await fetch("/api/portfolio/advice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          holdings: holdings.map((h) => ({
+            ticker: h.ticker,
+            shares: h.shares,
+            avgCost: h.avgCost,
+            currentPrice: h.currentPrice,
+            pnl: h.pnl,
+            pnlPercent: h.pnlPercent,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to get advice");
+      }
+      const data: PortfolioAdvice = await res.json();
+      setAdvice(data);
+    } catch (err) {
+      setAdviceError(
+        err instanceof Error ? err.message : "Failed to get advice"
+      );
+    }
+    setAdviceLoading(false);
   }
 
   if (loading) {
@@ -163,12 +211,11 @@ export default function PortfolioPage() {
         {showAdd && (
           <div className="bg-surface-1 border border-border-1 rounded-[14px] p-4 mb-4">
             <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                placeholder="Symbol"
+              <StockSearchInput
                 value={addSymbol}
-                onChange={(e) => setAddSymbol(e.target.value)}
-                className="flex-1 h-[40px] rounded-[10px] border border-border-1 bg-surface-2 px-3 text-[14px] text-text-primary placeholder:text-text-faint outline-none"
+                onChange={setAddSymbol}
+                onSelect={(symbol) => setAddSymbol(symbol)}
+                placeholder="Symbol"
               />
               <input
                 type="number"
@@ -250,6 +297,126 @@ export default function PortfolioPage() {
           ))
         )}
       </div>
+
+      {/* Portfolio Insights */}
+      {holdings.length > 0 && (
+        <div className="px-5 mt-6">
+          <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
+            Portfolio Insights
+          </h2>
+
+          {!advice && !adviceLoading && (
+            <button
+              onClick={fetchAdvice}
+              className="w-full h-[44px] rounded-[14px] bg-accent-brand text-white font-bold text-[14px]"
+            >
+              Get AI Advice
+            </button>
+          )}
+
+          {adviceLoading && (
+            <div className="bg-surface-1 border border-border-1 rounded-[18px] p-5 flex items-center justify-center gap-3">
+              <div className="w-5 h-5 border-2 border-accent-brand border-t-transparent rounded-full animate-spin" />
+              <span className="text-[14px] text-text-muted">
+                Analyzing your portfolio...
+              </span>
+            </div>
+          )}
+
+          {adviceError && (
+            <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4 mb-3">
+              <p className="text-[13px] text-text-muted mb-3">
+                {adviceError}
+              </p>
+              <button
+                onClick={fetchAdvice}
+                className="text-[13px] font-medium text-accent-brand"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {advice && (
+            <div className="space-y-3">
+              {/* Summary */}
+              <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
+                <p className="text-[13px] text-text-secondary leading-relaxed">
+                  {advice.summary}
+                </p>
+              </div>
+
+              {/* Individual advice cards */}
+              {advice.advice.map((item) => (
+                <div
+                  key={item.ticker}
+                  className="bg-surface-1 border border-border-1 rounded-[18px] p-4"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[15px] font-bold">
+                        {item.ticker}
+                      </span>
+                      <span
+                        className="px-2 py-0.5 rounded-full text-[11px] font-bold uppercase"
+                        style={{
+                          backgroundColor:
+                            item.action === "HOLD" || item.action === "ADD"
+                              ? "rgba(34, 197, 94, 0.15)"
+                              : item.action === "TRIM"
+                                ? "rgba(234, 179, 8, 0.15)"
+                                : "rgba(239, 68, 68, 0.15)",
+                          color:
+                            item.action === "HOLD" || item.action === "ADD"
+                              ? "var(--pos-green-bright)"
+                              : item.action === "TRIM"
+                                ? "#eab308"
+                                : "var(--neg-red-bright)",
+                        }}
+                      >
+                        {item.action}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{
+                          backgroundColor:
+                            item.urgency === "low"
+                              ? "var(--pos-green-bright)"
+                              : item.urgency === "medium"
+                                ? "#eab308"
+                                : "var(--neg-red-bright)",
+                        }}
+                      />
+                      <span className="text-[10px] text-text-faint font-mono uppercase">
+                        {item.urgency}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[12px] text-text-muted leading-relaxed">
+                    {item.reason}
+                  </p>
+                </div>
+              ))}
+
+              {/* Refresh button */}
+              <button
+                onClick={fetchAdvice}
+                className="w-full text-center text-[13px] font-medium text-accent-brand py-2"
+              >
+                Refresh advice
+              </button>
+
+              {/* AI disclaimer */}
+              <p className="text-[10px] text-text-faint font-mono text-center px-4 leading-relaxed">
+                AI-generated advice for informational purposes only. Not
+                financial advice. Always consult a licensed advisor.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       <Disclaimer />
       <TabBar />

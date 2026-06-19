@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TabBar } from "@/components/tab-bar";
+import { StockSearchInput } from "@/components/stock-search-input";
 import type { AlertSettings } from "@/lib/types";
 
 interface PriceAlert {
@@ -225,12 +226,11 @@ export default function AlertsPage() {
         {showAddAlert && (
           <div className="bg-surface-1 border border-border-1 rounded-[14px] p-4 mb-3">
             <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                placeholder="Symbol"
+              <StockSearchInput
                 value={alertSymbol}
-                onChange={(e) => setAlertSymbol(e.target.value)}
-                className="flex-1 h-[40px] rounded-[10px] border border-border-1 bg-surface-2 px-3 text-[14px] text-text-primary placeholder:text-text-faint outline-none font-mono"
+                onChange={setAlertSymbol}
+                onSelect={(symbol) => setAlertSymbol(symbol)}
+                placeholder="Symbol"
               />
               <select
                 value={alertCondition}

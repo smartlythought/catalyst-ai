@@ -150,6 +150,8 @@ export async function getAnalystRatings(
 export async function getCompanyProfile(
   symbol: string
 ): Promise<CompanyProfile | null> {
+  let profile: CompanyProfile | null = null;
+
   // Try FMP stable profile
   if (FMP_KEY) {
     try {
@@ -160,7 +162,7 @@ export async function getCompanyProfile(
         const data = await res.json();
         const p = Array.isArray(data) ? data[0] : data;
         if (p?.companyName || p?.name) {
-          return {
+          profile = {
             symbol: p.symbol || symbol,
             name: p.companyName || p.name || symbol,
             exchange: p.exchangeShortName || p.exchange || "",
@@ -186,7 +188,7 @@ export async function getCompanyProfile(
       );
       const p = await res.json();
       if (p?.name) {
-        return {
+        profile = {
           symbol: p.ticker || symbol,
           name: p.name,
           exchange: p.exchange || "",
@@ -203,7 +205,54 @@ export async function getCompanyProfile(
     } catch {}
   }
 
-  return null;
+  // Enrich with basic financials if key fields are missing
+  if (profile && (!profile.pe || !profile.avgVolume)) {
+    try {
+      const financials = await getBasicFinancials(symbol);
+      if (financials) {
+        if (!profile.pe && financials.pe) profile.pe = financials.pe;
+        if (!profile.avgVolume && financials.avgVolume)
+          profile.avgVolume = financials.avgVolume;
+        if (!profile.week52High && financials.week52High)
+          profile.week52High = financials.week52High;
+        if (!profile.week52Low && financials.week52Low)
+          profile.week52Low = financials.week52Low;
+      }
+    } catch {}
+  }
+
+  return profile;
+}
+
+export async function getBasicFinancials(
+  symbol: string
+): Promise<{
+  pe: number;
+  avgVolume: number;
+  week52High: number;
+  week52Low: number;
+} | null> {
+  if (!FINNHUB_KEY) return null;
+
+  try {
+    const res = await fetch(
+      `https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${FINNHUB_KEY}`
+    );
+    const data = await res.json();
+    const m = data?.metric;
+    if (!m) return null;
+
+    return {
+      pe: m.peNormalizedAnnual || m.peTTM || 0,
+      avgVolume: m["10DayAverageTradingVolume"]
+        ? m["10DayAverageTradingVolume"] * 1e6
+        : 0,
+      week52High: m["52WeekHigh"] || 0,
+      week52Low: m["52WeekLow"] || 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function getHistoricalPrices(
@@ -232,13 +281,14 @@ export async function getHistoricalPrices(
     } catch {}
   }
 
-  // Fallback: Finnhub candles (daily)
+  // Fallback: Finnhub candles
   if (FINNHUB_KEY) {
     try {
       const to = Math.floor(Date.now() / 1000);
       const from = to - days * 86400;
+      const resolution = days <= 1 ? "5" : days > 365 ? "W" : "D";
       const res = await fetch(
-        `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_KEY}`
+        `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${FINNHUB_KEY}`
       );
       const data = await res.json();
       if (data.s === "ok" && data.c?.length) {

@@ -50,7 +50,7 @@ export default function StockDeepDivePage({
   const [onWatchlist, setOnWatchlist] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/stock/${ticker}`)
+    fetch(`/api/stock/${ticker}?range=${range}`)
       .then((r) => r.json())
       .then(setData)
       .catch(() => {})
@@ -60,7 +60,7 @@ export default function StockDeepDivePage({
       .then((r) => r.json())
       .then((d) => setNews(d.news || []))
       .catch(() => {});
-  }, [ticker]);
+  }, [ticker, range]);
 
   async function toggleWatchlist() {
     const method = onWatchlist ? "DELETE" : "POST";
@@ -220,7 +220,7 @@ export default function StockDeepDivePage({
               />
             </svg>
             <div className="flex items-center gap-2 mt-3">
-              {["1W", "1M", "3M", "1Y"].map((r) => (
+              {["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "5Y"].map((r) => (
                 <button
                   key={r}
                   onClick={() => setRange(r)}
@@ -268,6 +268,17 @@ export default function StockDeepDivePage({
                 value: data.profile.avgVolume
                   ? `${(data.profile.avgVolume / 1e6).toFixed(1)}M`
                   : "—",
+              },
+              {
+                label: "Open",
+                value: data.quote?.open ? `$${data.quote.open.toFixed(2)}` : "—",
+              },
+              {
+                label: "Day range",
+                value:
+                  data.quote?.low && data.quote?.high
+                    ? `$${data.quote.low.toFixed(2)} – $${data.quote.high.toFixed(2)}`
+                    : "—",
               },
             ].map((stat) => (
               <div

@@ -15,20 +15,34 @@ const CIK_MAP: Record<string, string> = {
   CRM: "1108524",
 };
 
+const RANGE_TO_DAYS: Record<string, number> = {
+  "1D": 1,
+  "1W": 7,
+  "1M": 30,
+  "3M": 90,
+  "6M": 180,
+  "1Y": 365,
+  "3Y": 1095,
+  "5Y": 1825,
+};
+
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
   const { ticker } = await params;
   const symbol = ticker.toUpperCase();
   const cik = CIK_MAP[symbol];
 
+  const range = request.nextUrl.searchParams.get("range") || "1M";
+  const days = RANGE_TO_DAYS[range] || 30;
+
   const [quote, profile, analysts, prices, form4s, filings8k] =
     await Promise.all([
       getQuote(symbol).catch(() => null),
       getCompanyProfile(symbol).catch(() => null),
       getAnalystRatings(symbol).catch(() => null),
-      getHistoricalPrices(symbol, 30).catch(() => []),
+      getHistoricalPrices(symbol, days).catch(() => []),
       cik ? getRecentForm4(cik).catch(() => []) : Promise.resolve([]),
       cik ? getRecent8K(cik).catch(() => []) : Promise.resolve([]),
     ]);
