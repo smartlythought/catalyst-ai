@@ -10,6 +10,7 @@ import {
   logIngestion,
 } from "@/lib/supabase/queries";
 import { dispatchSignalAlerts } from "@/lib/whatsapp";
+import { dispatchEmailAlerts } from "@/lib/email";
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
@@ -184,8 +185,9 @@ export async function POST(request: NextRequest) {
       );
 
       let whatsappSent = 0;
+      let emailSent = 0;
       if (aiResult.call !== "WATCH" && aiResult.conviction >= 65) {
-        whatsappSent = await dispatchSignalAlerts({
+        const alertPayload = {
           ticker: ticker.symbol,
           call: aiResult.call,
           conviction: aiResult.conviction,
@@ -194,7 +196,11 @@ export async function POST(request: NextRequest) {
           target: aiResult.targetPrice ?? undefined,
           stop: aiResult.stopPrice ?? undefined,
           why: aiResult.why,
-        }).catch(() => 0);
+        };
+        [whatsappSent, emailSent] = await Promise.all([
+          dispatchSignalAlerts(alertPayload).catch(() => 0),
+          dispatchEmailAlerts(alertPayload).catch(() => 0),
+        ]);
       }
 
       processResults.push({
@@ -204,6 +210,7 @@ export async function POST(request: NextRequest) {
         conviction: aiResult.conviction,
         signalCount: signals.length,
         whatsappSent,
+        emailSent,
       });
     } catch (err) {
       processResults.push({

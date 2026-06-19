@@ -16,6 +16,9 @@ export default function AccountPage() {
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  const [emailTestSending, setEmailTestSending] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<"ok" | "fail" | null>(null);
+  const [emailTestError, setEmailTestError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -88,6 +91,27 @@ export default function AccountPage() {
     }
     setTestSending(false);
     setTimeout(() => { setTestResult(null); setTestError(null); }, 8000);
+  }
+
+  async function sendTestEmail() {
+    setEmailTestSending(true);
+    setEmailTestResult(null);
+    setEmailTestError(null);
+    try {
+      const res = await fetch("/api/email/test", { method: "POST" });
+      if (res.ok) {
+        setEmailTestResult("ok");
+      } else {
+        const data = await res.json().catch(() => ({ error: "Unknown error" }));
+        setEmailTestResult("fail");
+        setEmailTestError(data.error || `HTTP ${res.status}`);
+      }
+    } catch {
+      setEmailTestResult("fail");
+      setEmailTestError("Network error");
+    }
+    setEmailTestSending(false);
+    setTimeout(() => { setEmailTestResult(null); setEmailTestError(null); }, 8000);
   }
 
   async function handleSignOut() {
@@ -246,6 +270,51 @@ export default function AccountPage() {
           {!profile?.whatsapp_number && (
             <p className="text-[11px] text-accent-brand mt-1 font-medium">
               Save your number, then enable WhatsApp in Alert settings.
+            </p>
+          )}
+        </div>
+
+        {/* Email Alerts */}
+        <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden mb-5 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <rect x="2" y="4" width="20" height="16" rx="3" stroke="#3B82F6" strokeWidth="1.5" fill="none"/>
+              <path d="M2 7L12 13L22 7" stroke="#3B82F6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span className="text-[14px] font-semibold">Email Alerts</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[13px] text-text-secondary">
+                {user.email}
+              </p>
+              <p className="text-[11px] text-text-faint mt-0.5">
+                Enable Email in Alert settings to receive stock calls
+              </p>
+            </div>
+            <button
+              onClick={sendTestEmail}
+              disabled={emailTestSending}
+              className={`text-[11px] font-bold px-3 py-1.5 rounded-[8px] transition-all shrink-0 ml-3 ${
+                emailTestResult === "ok"
+                  ? "bg-pos-green/15 text-pos-green"
+                  : emailTestResult === "fail"
+                    ? "bg-neg-red/15 text-neg-red"
+                    : "bg-blue-500/10 text-blue-500"
+              }`}
+            >
+              {emailTestSending
+                ? "Sending..."
+                : emailTestResult === "ok"
+                  ? "Sent! Check inbox"
+                  : emailTestResult === "fail"
+                    ? "Failed"
+                    : "Send test email"}
+            </button>
+          </div>
+          {emailTestError && (
+            <p className="text-[11px] text-neg-red mt-2 font-mono break-all">
+              {emailTestError}
             </p>
           )}
         </div>
