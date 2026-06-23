@@ -270,6 +270,28 @@ export default function StockDeepDivePage({
             </div>
           )}
         </div>
+        {/* Market session indicator */}
+        {price > 0 && (() => {
+          const now = new Date();
+          const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+          const day = et.getDay();
+          const h = et.getHours();
+          const m = et.getMinutes();
+          const t = h * 60 + m;
+          const isWeekend = day === 0 || day === 6;
+          const session = isWeekend ? "closed" : t < 570 ? "pre-market" : t < 960 ? "market-hours" : "after-hours";
+          const sessionLabel = session === "pre-market" ? "Pre-Market" : session === "after-hours" ? "After Hours" : session === "closed" ? "Market Closed" : "Market Open";
+          const sessionColor = session === "market-hours" ? "var(--pos-green)" : session === "closed" ? "var(--text-faint)" : "#E8A838";
+          return (
+            <div className="flex items-center gap-1.5 mt-2">
+              <span className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: sessionColor, boxShadow: session === "market-hours" ? "0 0 4px var(--pos-green)" : "none" }} />
+              <span className="text-[11px] font-medium" style={{ color: sessionColor }}>{sessionLabel}</span>
+              <span className="text-[11px] text-text-faint ml-1">
+                {et.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/New_York" })} ET
+              </span>
+            </div>
+          );
+        })()}
       </header>
 
       {/* Price chart */}

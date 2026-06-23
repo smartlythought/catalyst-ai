@@ -18,36 +18,31 @@ export async function GET(request: NextRequest) {
     searchFinnhub(q),
   ]);
 
-  // Merge: DB results first (they have sector info), then Finnhub
   const seen = new Set<string>();
-  const results: SearchResult[] = [];
+  const merged: SearchResult[] = [];
 
-  for (const r of dbResults) {
+  for (const r of [...dbResults, ...finnhubResults]) {
     if (!seen.has(r.symbol)) {
       seen.add(r.symbol);
-      results.push(r);
+      merged.push(r);
     }
   }
 
-  for (const r of finnhubResults) {
-    if (!seen.has(r.symbol) && results.length < 20) {
-      seen.add(r.symbol);
-      results.push(r);
-    }
-  }
-
-  // If still few results, try FMP as tertiary source
-  if (results.length < 5 && FMP_KEY) {
+  if (merged.length < 5 && FMP_KEY) {
     const fmpResults = await searchFMP(q);
     for (const r of fmpResults) {
-      if (!seen.has(r.symbol) && results.length < 20) {
+      if (!seen.has(r.symbol)) {
         seen.add(r.symbol);
-        results.push(r);
+        merged.push(r);
       }
     }
   }
 
-  return NextResponse.json({ results });
+  const upper = q.toUpperCase();
+  const lower = q.toLowerCase();
+  merged.sort((a, b) => relevanceScore(a, upper, lower) - relevanceScore(b, upper, lower));
+
+  return NextResponse.json({ results: merged.slice(0, 20) });
 }
 
 interface SearchResult {
@@ -122,4 +117,16 @@ async function searchFMP(q: string): Promise<SearchResult[]> {
   } catch {
     return [];
   }
+}
+
+function relevanceScore(r: SearchResult, upper: string, lower: string): number {
+  const sym = r.symbol.toUpperCase();
+  const name = (r.name || "").toLowerCase();
+  if (sym === upper) return 0;
+  if (sym.startsWith(upper)) return 1;
+  if (name === lower) return 2;
+  if (name.startsWith(lower)) return 3;
+  if (name.includes(lower)) return 4;
+  if (sym.includes(upper)) return 5;
+  return 6;
 }

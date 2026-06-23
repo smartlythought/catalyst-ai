@@ -30,6 +30,7 @@ export default function SignalDetailPage({
 }) {
   const { id } = use(params);
   const [signal, setSignal] = useState<Signal | null>(null);
+  const [livePrice, setLivePrice] = useState<{ price: number; change: number; changePercent: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -72,6 +73,18 @@ export default function SignalDetailPage({
               sparkline: [],
               timestamp: data.generatedAt || new Date().toISOString(),
             });
+            fetch(`/api/stock/${p.symbol}?range=1D`)
+              .then((r) => r.json())
+              .then((stock) => {
+                if (stock.quote?.price) {
+                  setLivePrice({
+                    price: stock.quote.price,
+                    change: stock.quote.change || 0,
+                    changePercent: stock.quote.changePercent || 0,
+                  });
+                }
+              })
+              .catch(() => {});
             setLoading(false);
             return;
           }
@@ -156,16 +169,59 @@ export default function SignalDetailPage({
             </p>
           </div>
           <div className="text-right">
-            <div className="font-mono text-[22px] font-bold">
-              ${signal.price.toFixed(2)}
-            </div>
-            <div className="font-mono text-[14px] font-medium" style={{ color: changeColor }}>
-              {signal.change >= 0 ? "+" : ""}
-              {signal.change.toFixed(2)} ({formatPercent(signal.changePercent)})
-            </div>
+            {livePrice ? (
+              <>
+                <div className="flex items-center justify-end gap-1.5">
+                  <span className="text-[8px] font-bold tracking-[0.5px] uppercase text-pos-green bg-pos-green/15 px-1.5 py-0.5 rounded animate-pulse">
+                    Live
+                  </span>
+                  <span className="font-mono text-[22px] font-bold">
+                    ${livePrice.price.toFixed(2)}
+                  </span>
+                </div>
+                <div className="font-mono text-[14px] font-medium" style={{ color: livePrice.changePercent >= 0 ? "var(--pos-green-bright)" : "var(--neg-red-bright)" }}>
+                  {livePrice.change >= 0 ? "+" : ""}
+                  {livePrice.change.toFixed(2)} ({formatPercent(livePrice.changePercent)})
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-mono text-[22px] font-bold">
+                  ${signal.price.toFixed(2)}
+                </div>
+                <div className="font-mono text-[14px] font-medium" style={{ color: changeColor }}>
+                  {signal.change >= 0 ? "+" : ""}
+                  {signal.change.toFixed(2)} ({formatPercent(signal.changePercent)})
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
+
+      {/* Live price vs entry alert */}
+      {livePrice && signal.entry && Math.abs(livePrice.price - signal.entry) / signal.entry > 0.02 && (
+        <div className="px-5 mb-3">
+          <div className="rounded-[14px] px-4 py-3 border flex items-center justify-between"
+            style={{
+              background: livePrice.price < signal.entry ? "rgba(234,57,67,0.08)" : "rgba(22,199,132,0.08)",
+              borderColor: livePrice.price < signal.entry ? "rgba(234,57,67,0.2)" : "rgba(22,199,132,0.2)",
+            }}
+          >
+            <div>
+              <div className="text-[11px] text-text-muted font-medium">Live vs Entry</div>
+              <div className="font-mono text-[13px] font-bold" style={{ color: livePrice.price < signal.entry ? "var(--neg-red-bright)" : "var(--pos-green-bright)" }}>
+                {livePrice.price < signal.entry ? "" : "+"}
+                {(((livePrice.price - signal.entry) / signal.entry) * 100).toFixed(2)}% from entry
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] text-text-faint">Entry</div>
+              <div className="font-mono text-[14px] font-semibold">${signal.entry.toFixed(2)}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hero container */}
       <div className="px-5 mb-4">
