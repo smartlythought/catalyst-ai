@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";

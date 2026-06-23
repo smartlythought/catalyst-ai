@@ -339,6 +339,42 @@ export default function EcosystemPage({
 
   const hasResults = filteredEdges.length > 0;
 
+  if (data.totalRelationships === 0) {
+    return (
+      <div className="min-h-dvh pb-24">
+        <header className="safe-top px-5 pb-4">
+          <div className="flex items-center justify-between mb-3">
+            <Link href="/" className="text-[14px] text-accent-brand font-medium flex items-center gap-1">
+              <span className="text-[18px]">&lsaquo;</span> Back
+            </Link>
+          </div>
+          <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">{symbol} Ecosystem</h1>
+        </header>
+        <div className="px-5">
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] p-6 text-center">
+            <div className="text-[32px] mb-3">🔍</div>
+            <p className="text-[15px] font-semibold mb-1">Ecosystem not available yet</p>
+            <p className="text-[13px] text-text-muted mb-4">
+              AI-generated ecosystem maps are available for select tickers. Try one of the popular ones below, or check back later.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {["NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA"].map((t) => (
+                <Link
+                  key={t}
+                  href={`/ecosystem/${t}`}
+                  className="font-mono text-[13px] font-bold text-accent-brand bg-accent-brand/10 px-3 py-1.5 rounded-full"
+                >
+                  {t}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+        <TabBar />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-dvh pb-24">
       {/* Header */}

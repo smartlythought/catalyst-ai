@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 export const revalidate = 3600; // ISR: revalidate hourly
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 
 interface ExecEvent {
   company: string;
@@ -126,79 +125,57 @@ function formatRevenue(val: number): string {
   return val.toLocaleString();
 }
 
-async function fetchGeminiEvents(): Promise<ExecEvent[]> {
-  if (!GEMINI_KEY) return [];
+const DEV_CATEGORY_MAP: Record<string, { eventType: string; impact: "high" | "medium" | "low" }> = {
+  "Acquisition": { eventType: "Acquisition", impact: "high" },
+  "Clinical Trial": { eventType: "Clinical Trial", impact: "high" },
+  "Contract": { eventType: "Contract Win", impact: "medium" },
+  "FDA": { eventType: "Regulatory", impact: "high" },
+  "IPO": { eventType: "IPO", impact: "high" },
+  "Joint Venture": { eventType: "Partnership", impact: "medium" },
+  "Product Launch": { eventType: "Product Launch", impact: "high" },
+  "Partnership": { eventType: "Partnership", impact: "medium" },
+  "Restructuring": { eventType: "Restructuring", impact: "medium" },
+  "Stock Split": { eventType: "Stock Split", impact: "medium" },
+};
 
-  const today = todayStr();
-  const endDate = futureStr(30);
+async function fetchMajorDevelopments(): Promise<ExecEvent[]> {
+  if (!FINNHUB_KEY) return [];
 
-  const prompt = `You are a financial events tracker. List upcoming executive and company events for major US mega-cap tech companies (AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA, AVGO, AMD, NFLX, CRM, ORCL) from ${today} to ${endDate}.
+  const events: ExecEvent[] = [];
+  const from = todayStr();
+  const to = futureStr(30);
 
-Include these event types: earnings calls, product launches, developer conferences, shareholder meetings, regulatory hearings, investor days, and major keynotes.
-
-Return a JSON array of objects with these fields:
-- company (string): full company name
-- ticker (string): stock ticker
-- eventType (string): one of "Earnings Call", "Product Launch", "Conference", "Shareholder Meeting", "Regulatory Hearing", "Investor Day", "Keynote"
-- date (string): YYYY-MM-DD format
-- time (string): time if known, or "TBD"
-- description (string): one sentence describing the event
-- impact (string): "high", "medium", or "low"
-
-Only include events you are reasonably confident about based on known annual schedules and publicly announced events. Do not fabricate events. If unsure about a date, skip the event.
-
-Return ONLY the JSON array, no other text.`;
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.1,
-          },
-        }),
-        next: { revalidate: 3600 },
-      }
+  for (let i = 0; i < MEGA_CAP_TICKERS.length; i += 5) {
+    const batch = MEGA_CAP_TICKERS.slice(i, i + 5);
+    const results = await Promise.all(
+      batch.map(async (ticker) => {
+        try {
+          const res = await fetch(
+            `https://finnhub.io/api/v1/major-development?symbol=${ticker}&from=${from}&to=${to}&token=${FINNHUB_KEY}`,
+            { next: { revalidate: 3600 } }
+          );
+          if (!res.ok) return [];
+          const data = await res.json();
+          return (data.majorDevelopment || []).map((d: any) => {
+            const mapped = DEV_CATEGORY_MAP[d.category] || { eventType: d.category || "News", impact: "low" as const };
+            return {
+              company: MEGA_CAP_NAMES[ticker] || ticker,
+              ticker,
+              eventType: mapped.eventType,
+              date: d.datetime?.split(" ")[0] || from,
+              time: d.datetime?.split(" ")[1] || "TBD",
+              description: d.headline || `${MEGA_CAP_NAMES[ticker] || ticker} ${mapped.eventType.toLowerCase()} announcement`,
+              impact: mapped.impact,
+            };
+          });
+        } catch { return []; }
+      })
     );
-
-    if (!res.ok) return [];
-
-    const data = await res.json();
-    const text =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-
-    const events: ExecEvent[] = JSON.parse(text);
-
-    // Validate and sanitize
-    return events
-      .filter(
-        (e) =>
-          e.company &&
-          e.ticker &&
-          e.eventType &&
-          e.date &&
-          /^\d{4}-\d{2}-\d{2}$/.test(e.date)
-      )
-      .map((e) => ({
-        company: e.company,
-        ticker: e.ticker.toUpperCase(),
-        eventType: e.eventType,
-        date: e.date,
-        time: e.time || "TBD",
-        description: e.description || "",
-        impact:
-          e.impact === "high" || e.impact === "medium" || e.impact === "low"
-            ? e.impact
-            : "medium",
-      }));
-  } catch {
-    return [];
+    for (const r of results) events.push(...r);
+    if (i + 5 < MEGA_CAP_TICKERS.length) await new Promise(r => setTimeout(r, 200));
   }
+
+  return events;
 }
 
 function deduplicateEvents(events: ExecEvent[]): ExecEvent[] {
@@ -217,13 +194,12 @@ function deduplicateEvents(events: ExecEvent[]): ExecEvent[] {
 }
 
 export async function GET() {
-  const [finnhubEvents, geminiEvents] = await Promise.all([
+  const [finnhubEvents, devEvents] = await Promise.all([
     fetchFinnhubEarnings(),
-    fetchGeminiEvents(),
+    fetchMajorDevelopments(),
   ]);
 
-  // Finnhub earnings take priority (more accurate), then Gemini for other event types
-  const combined = deduplicateEvents([...finnhubEvents, ...geminiEvents]);
+  const combined = deduplicateEvents([...finnhubEvents, ...devEvents]);
 
   return NextResponse.json({
     events: combined,

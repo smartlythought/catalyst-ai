@@ -41,6 +41,10 @@ const EVENT_TYPE_COLORS: Record<string, { bg: string; text: string }> = {
     bg: "rgba(234, 57, 67, 0.12)",
     text: "var(--neg-red-bright)",
   },
+  Regulatory: {
+    bg: "rgba(234, 57, 67, 0.12)",
+    text: "var(--neg-red-bright)",
+  },
   "Shareholder Meeting": {
     bg: "rgba(168, 85, 247, 0.12)",
     text: "#A855F7",
@@ -48,6 +52,34 @@ const EVENT_TYPE_COLORS: Record<string, { bg: string; text: string }> = {
   "Investor Day": {
     bg: "rgba(59, 130, 246, 0.12)",
     text: "#3B82F6",
+  },
+  Acquisition: {
+    bg: "rgba(232, 168, 56, 0.12)",
+    text: "#E8A838",
+  },
+  Partnership: {
+    bg: "rgba(83, 189, 235, 0.12)",
+    text: "#53BDEB",
+  },
+  "Contract Win": {
+    bg: "rgba(22, 199, 132, 0.12)",
+    text: "var(--pos-green-bright)",
+  },
+  "Clinical Trial": {
+    bg: "rgba(168, 85, 247, 0.12)",
+    text: "#A855F7",
+  },
+  Restructuring: {
+    bg: "rgba(154, 161, 173, 0.12)",
+    text: "#9AA1AD",
+  },
+  "Stock Split": {
+    bg: "rgba(232, 168, 56, 0.12)",
+    text: "#E8A838",
+  },
+  IPO: {
+    bg: "rgba(22, 199, 132, 0.12)",
+    text: "var(--pos-green-bright)",
   },
 };
 
