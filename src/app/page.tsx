@@ -3,28 +3,68 @@ import { SignalsFeed } from "@/components/signals-feed";
 import { MarketIndices } from "@/components/market-indices";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
-import { getActiveCalls } from "@/lib/supabase/queries";
-import { getBatchQuotes } from "@/lib/ingestion/market-data";
-import { MOCK_SIGNALS, getTodayDate } from "@/lib/mock-data";
+import { createServiceClient } from "@/lib/supabase/server";
+import { getTodayDate } from "@/lib/mock-data";
+import type { Signal } from "@/lib/types";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
+
+function getTradingDateET(): string {
+  const now = new Date();
+  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day = et.getDay();
+  const hour = et.getHours();
+  if (day === 0) et.setDate(et.getDate() - 2);
+  else if (day === 6) et.setDate(et.getDate() - 1);
+  else if (hour < 4) et.setDate(et.getDate() - (day === 1 ? 3 : 1));
+  return et.toISOString().split("T")[0];
+}
 
 export default async function HomePage() {
-  let signals = await getActiveCalls().catch(() => []);
+  const tradingDate = getTradingDateET();
 
-  if (signals.length > 0) {
-    const tickers = [...new Set(signals.map((s) => s.ticker))];
-    const quotes = await getBatchQuotes(tickers).catch(() => new Map());
-    for (const s of signals) {
-      const q = quotes.get(s.ticker);
-      if (q) {
-        s.price = q.price;
-        s.change = q.change;
-        s.changePercent = q.changePercent;
-      }
-    }
-  } else {
-    signals = MOCK_SIGNALS;
+  let row: { picks: any; generated_at: string } | null = null;
+  try {
+    const supabase = createServiceClient();
+    const { data } = await supabase
+      .from("daily_picks")
+      .select("picks, generated_at")
+      .eq("generated_date", tradingDate)
+      .single();
+    row = data;
+  } catch {}
+
+  let signals: Signal[] = [];
+
+  if (row?.picks && Array.isArray(row.picks)) {
+    signals = row.picks.map((p: any, i: number) => ({
+      id: `pick-${tradingDate}-${i}`,
+      ticker: p.symbol,
+      company: p.companyName,
+      exchange: "NASDAQ",
+      price: p.currentPrice || p.entryPrice,
+      change: 0,
+      changePercent: 0,
+      call: p.action === "SELL" ? "REDUCE" : "BUY",
+      conviction: p.conviction,
+      horizon: p.timeframe === "short-term" ? "1–4 weeks" : "1–6 months",
+      entry: p.entryPrice,
+      target: p.targetPrice,
+      stop: p.stopLoss,
+      riskReward: p.entryPrice && p.targetPrice && p.stopLoss
+        ? `1:${(Math.abs(p.targetPrice - p.entryPrice) / Math.abs(p.entryPrice - p.stopLoss)).toFixed(1)}`
+        : undefined,
+      why: p.rationale,
+      tags: (p.catalysts || []).slice(0, 3),
+      signals: (p.catalysts || []).map((c: string) => ({
+        type: "NEWS" as const,
+        title: c,
+        detail: "",
+        sentiment: p.action === "SELL" ? "negative" as const : "positive" as const,
+      })),
+      sparkline: [],
+      timestamp: row.generated_at || new Date().toISOString(),
+    }));
   }
 
   const buyCount = signals.filter((s) => s.call === "BUY").length;
