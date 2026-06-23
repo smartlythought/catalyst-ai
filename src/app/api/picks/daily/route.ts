@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { createServiceClient } from "@/lib/supabase/server";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
@@ -55,21 +56,28 @@ const SCAN_UNIVERSE = [
 
 async function fetchFMPBatchQuotes(): Promise<Map<string, any>> {
   const map = new Map();
-  if (!FMP_KEY) return map;
+  if (!FMP_KEY) { console.log("[picks] No FMP key"); return map; }
 
   for (let i = 0; i < SCAN_UNIVERSE.length; i += 30) {
     const batch = SCAN_UNIVERSE.slice(i, i + 30);
     try {
       const res = await fetch(
         `https://financialmodelingprep.com/stable/batch-quote?symbols=${batch.join(",")}&apikey=${FMP_KEY}`,
-        { next: { revalidate: 300 } }
+        { cache: "no-store" }
       );
-      if (!res.ok) continue;
+      if (!res.ok) {
+        console.log(`[picks] FMP batch ${i}-${i+30} status: ${res.status}`);
+        continue;
+      }
       const data = await res.json();
-      for (const q of (Array.isArray(data) ? data : [])) {
+      const arr = Array.isArray(data) ? data : [];
+      for (const q of arr) {
         if (q.symbol && q.price > 0) map.set(q.symbol, q);
       }
-    } catch {}
+      console.log(`[picks] FMP batch ${i}-${i+30}: got ${arr.length} quotes, total ${map.size}`);
+    } catch (e) {
+      console.log(`[picks] FMP batch ${i}-${i+30} error:`, e);
+    }
   }
   return map;
 }
@@ -141,24 +149,34 @@ async function buildSnapshots(): Promise<StockSnapshot[]> {
     }
   }
 
-  if (snapshots.length < 20 && FINNHUB_KEY) {
-    for (let i = 0; i < Math.min(SCAN_UNIVERSE.length, 40); i++) {
-      if (fmpQuotes.has(SCAN_UNIVERSE[i])) continue;
-      const q = await fetchFinnhubQuote(SCAN_UNIVERSE[i]);
-      if (q) {
-        snapshots.push({
-          symbol: SCAN_UNIVERSE[i],
-          name: SCAN_UNIVERSE[i],
-          price: q.c,
-          change: q.d ?? 0,
-          changePct: q.dp ?? 0,
-          pe: 0, marketCap: 0, sector: "", volume: 0,
-          week52High: q.h ?? 0, week52Low: q.l ?? 0,
-          analystBuy: 0, analystHold: 0, analystSell: 0, targetMean: 0,
-        });
+  if (snapshots.length < 40 && FINNHUB_KEY) {
+    const needed = SCAN_UNIVERSE.filter(s => !fmpQuotes.has(s)).slice(0, 60);
+    console.log(`[picks] Finnhub fallback for ${needed.length} symbols`);
+    for (let i = 0; i < needed.length; i += 5) {
+      const batch = needed.slice(i, i + 5);
+      const results = await Promise.all(batch.map(async (sym) => {
+        const q = await fetchFinnhubQuote(sym);
+        return q ? { sym, q } : null;
+      }));
+      for (const r of results) {
+        if (r) {
+          snapshots.push({
+            symbol: r.sym,
+            name: r.sym,
+            price: r.q.c,
+            change: r.q.d ?? 0,
+            changePct: r.q.dp ?? 0,
+            pe: 0, marketCap: 0, sector: "", volume: 0,
+            week52High: r.q.h ?? 0, week52Low: r.q.l ?? 0,
+            analystBuy: 0, analystHold: 0, analystSell: 0, targetMean: 0,
+          });
+        }
       }
+      if (snapshots.length >= 40) break;
+      if (i + 5 < needed.length) await new Promise(r => setTimeout(r, 200));
     }
   }
+  console.log(`[picks] Total snapshots: ${snapshots.length}`);
 
   const topMovers = [...snapshots]
     .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
@@ -179,8 +197,10 @@ async function buildSnapshots(): Promise<StockSnapshot[]> {
   return snapshots;
 }
 
-function buildPrompt(snapshots: StockSnapshot[], today: string): string {
-  const stockData = snapshots.map(s => {
+function buildPrompt(snapshots: StockSnapshot[], today: string, phase: string): string {
+  const shuffled = [...snapshots].sort(() => Math.random() - 0.5);
+
+  const stockData = shuffled.map(s => {
     let line = `${s.symbol} | $${s.price.toFixed(2)} | ${s.changePct >= 0 ? "+" : ""}${s.changePct.toFixed(2)}%`;
     if (s.pe > 0) line += ` | PE:${s.pe.toFixed(1)}`;
     if (s.marketCap > 0) line += ` | MCap:$${(s.marketCap / 1e9).toFixed(0)}B`;
@@ -191,12 +211,20 @@ function buildPrompt(snapshots: StockSnapshot[], today: string): string {
     return line;
   }).join("\n");
 
-  return `You are an elite stock analyst. Today is ${today}. Below are REAL live prices and data for ${snapshots.length} US stocks.
+  const phaseHint = phase === "pre-market"
+    ? "Focus on pre-market movers and gap-up/gap-down setups."
+    : phase === "after-hours"
+      ? "Focus on after-hours movers and next-day setups."
+      : "Focus on intraday momentum and swing trade setups.";
+
+  return `You are an elite stock analyst. Today is ${today} (${phase}). ${phaseHint}
+Below are REAL live prices and data for ${snapshots.length} US stocks.
 
 LIVE MARKET DATA:
 ${stockData}
 
 TASK: Select exactly 10 stocks for actionable same-day or short-term recommendations.
+Be creative and diverse — avoid defaulting to just mega-cap tech. Look across ALL sectors for the best risk/reward setups today.
 
 CRITICAL RULES:
 1. Entry price MUST be within 1-3% of the CURRENT price shown above. Users should be able to act TODAY.
@@ -206,7 +234,8 @@ CRITICAL RULES:
 5. Conviction 70+ means you are very confident based on the data
 6. DO NOT pick stocks that are already at 52-week highs unless they have strong analyst upgrades and momentum
 7. Favor stocks where analyst target price suggests meaningful upside/downside from current price
-8. Mix sectors — no more than 3 picks from the same sector
+8. MANDATORY: Pick from at least 6 different sectors. No more than 2 picks from the same sector.
+9. Include at least 3 mid-cap or smaller stocks (market cap under $50B) — not just mega-caps.
 
 Return a JSON array of exactly 10 objects:
 - "symbol": ticker
@@ -248,9 +277,82 @@ function validatePicks(picks: Pick[], snapshots: StockSnapshot[]): Pick[] {
   });
 }
 
-export async function GET() {
+function getTradingDateET(): string {
+  const now = new Date();
+  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day = et.getDay();
+  const hour = et.getHours();
+
+  if (day === 0) et.setDate(et.getDate() - 2);
+  else if (day === 6) et.setDate(et.getDate() - 1);
+  else if (hour < 4) et.setDate(et.getDate() - (day === 1 ? 3 : 1));
+
+  return et.toISOString().split("T")[0];
+}
+
+function getMarketPhase(): string {
+  const now = new Date();
+  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const hour = et.getHours();
+  const min = et.getMinutes();
+  const t = hour * 60 + min;
+  if (t < 570) return "pre-market";
+  if (t < 960) return "market-hours";
+  return "after-hours";
+}
+
+async function getCachedPicks(tradingDate: string): Promise<any | null> {
+  try {
+    const sb = createServiceClient();
+    const { data } = await sb
+      .from("daily_picks")
+      .select("*")
+      .eq("generated_date", tradingDate)
+      .single();
+
+    if (!data) return null;
+
+    const age = Date.now() - new Date(data.generated_at).getTime();
+    const maxAge = getMarketPhase() === "market-hours" ? 4 * 3600_000 : 12 * 3600_000;
+
+    if (age > maxAge) return null;
+
+    return {
+      picks: data.picks,
+      generatedAt: data.generated_at,
+      stocksScanned: data.stocks_scanned,
+      disclaimer: "AI-generated recommendations for informational purposes only. Not financial advice.",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function storePicks(tradingDate: string, picks: Pick[], scanned: number) {
+  try {
+    const sb = createServiceClient();
+    await sb.from("daily_picks").upsert({
+      generated_date: tradingDate,
+      picks,
+      stocks_scanned: scanned,
+      generated_at: new Date().toISOString(),
+    }, { onConflict: "generated_date" });
+  } catch {}
+}
+
+export async function GET(request: Request) {
   if (!GEMINI_KEY) {
     return NextResponse.json({ error: "AI not configured" }, { status: 500 });
+  }
+
+  const tradingDate = getTradingDateET();
+  const forceRefresh = new URL(request.url).searchParams.get("refresh") === "1";
+
+  if (!forceRefresh) {
+    const cached = await getCachedPicks(tradingDate);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
   }
 
   try {
@@ -263,8 +365,8 @@ export async function GET() {
       );
     }
 
-    const today = new Date().toISOString().split("T")[0];
-    const prompt = buildPrompt(snapshots, today);
+    const phase = getMarketPhase();
+    const prompt = buildPrompt(snapshots, tradingDate, phase);
 
     const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
     let picks: Pick[] = [];
@@ -280,7 +382,7 @@ export async function GET() {
               contents: [{ parts: [{ text: prompt }] }],
               generationConfig: {
                 responseMimeType: "application/json",
-                temperature: 0.4,
+                temperature: 0.7,
               },
             }),
           }
@@ -301,6 +403,8 @@ export async function GET() {
     }
 
     const validated = validatePicks(picks, snapshots);
+
+    await storePicks(tradingDate, validated, snapshots.length);
 
     return NextResponse.json({
       picks: validated,

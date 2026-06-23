@@ -207,8 +207,11 @@ export default function PicksPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"short-term" | "long-term">("short-term");
 
-  useEffect(() => {
-    fetch("/api/picks/daily")
+  function loadPicks(forceRefresh = false) {
+    setLoading(true);
+    setError(null);
+    const url = forceRefresh ? "/api/picks/daily?refresh=1" : "/api/picks/daily";
+    fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load picks");
         return r.json();
@@ -216,6 +219,10 @@ export default function PicksPage() {
       .then((d) => setData(d))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    loadPicks();
   }, []);
 
   const filtered =
@@ -226,9 +233,19 @@ export default function PicksPage() {
   return (
     <div className="min-h-dvh pb-24 safe-top">
       <header className="px-5 pt-4 pb-2">
-        <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
-          Daily Top 10
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
+            Daily Top 10
+          </h1>
+          {!loading && (
+            <button
+              onClick={() => loadPicks(true)}
+              className="text-[11px] font-bold text-accent-brand bg-accent-brand/10 border border-accent-brand/20 px-3 py-1.5 rounded-[8px] active:opacity-70"
+            >
+              Refresh
+            </button>
+          )}
+        </div>
         <p className="text-[13px] text-text-muted mt-1">
           AI-recommended buy &amp; sell picks with targets
         </p>

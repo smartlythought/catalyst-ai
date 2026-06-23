@@ -273,6 +273,18 @@ export default function StockDeepDivePage({
       </header>
 
       {/* Price chart */}
+      {chartData.length <= 1 && price > 0 && (
+        <div className="px-5 mb-5">
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4 text-center">
+            <div className="text-[13px] text-text-muted mb-1">
+              Chart data not yet available
+            </div>
+            <div className="text-[11px] text-text-faint">
+              Historical pricing may be limited for newer IPOs or less-traded stocks
+            </div>
+          </div>
+        </div>
+      )}
       {chartData.length > 1 && (
         <div className="px-5 mb-5">
           <div className="bg-surface-1 border border-border-1 rounded-[18px] p-4">
