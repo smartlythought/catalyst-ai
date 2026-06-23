@@ -6,6 +6,8 @@
  * Example: SpaceX → find all listed SpaceX partners/suppliers and rank them.
  */
 
+import { GEMINI_MODELS } from "@/lib/ai/models";
+
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const SEC_USER_AGENT = process.env.SEC_EDGAR_USER_AGENT || "Catalyst research@catalyst.claudeo.ai";
 
@@ -285,7 +287,7 @@ Rules:
 
 Return ONLY the JSON array, no other text.`;
 
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  const models = GEMINI_MODELS;
 
   try {
     let text: string | null = null;

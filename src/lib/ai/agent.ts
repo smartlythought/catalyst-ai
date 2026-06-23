@@ -7,12 +7,13 @@ import {
 } from "@/lib/ingestion/market-data";
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { getEcosystemMap } from "@/lib/ingestion/ecosystem";
+import { GEMINI_MODELS } from "@/lib/ai/models";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const FMP_KEY = process.env.FMP_API_KEY || "";
 
 // Primary model + fallback, mirroring the rest of the app.
-const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"];
+const MODELS = GEMINI_MODELS;
 const MAX_ITERATIONS = 5;
 const TOOL_TIMEOUT_MS = 12_000;
 const GEMINI_TIMEOUT_MS = 25_000;

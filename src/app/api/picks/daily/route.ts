@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendDailyPicksDigest } from "@/lib/email";
+import { GEMINI_MODELS } from "@/lib/ai/models";
 
 export const dynamic = "force-dynamic";
 
@@ -393,7 +394,7 @@ export async function GET(request: Request) {
     const stockData = buildStockData(snapshots);
 
     async function callGemini(prompt: string): Promise<Pick[]> {
-      const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+      const models = GEMINI_MODELS;
       for (const model of models) {
         try {
           const res = await fetch(

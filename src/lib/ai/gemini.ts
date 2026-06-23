@@ -1,8 +1,7 @@
+import { GEMINI_MODELS, geminiUrl } from "@/lib/ai/models";
+
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const GROQ_KEY = process.env.GROQ_API_KEY || "";
-
-const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 interface SignalInput {
   ticker: string;
@@ -95,30 +94,36 @@ function buildPrompt(input: SignalInput): string {
 async function callGemini(prompt: string): Promise<AICallResult> {
   if (!GEMINI_KEY) throw new Error("No Gemini API key");
 
-  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.3,
-        topP: 0.8,
-        responseMimeType: "application/json",
-      },
-    }),
-  });
+  let lastErr = "";
+  for (const model of GEMINI_MODELS) {
+    const res = await fetch(geminiUrl(model, GEMINI_KEY), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          topP: 0.8,
+          responseMimeType: "application/json",
+        },
+      }),
+    }).catch(() => null);
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini ${res.status}: ${err}`);
+    if (!res) {
+      lastErr = `${model}: network error`;
+      continue;
+    }
+    if (!res.ok) {
+      lastErr = `${model}: ${res.status} ${await res.text()}`;
+      continue;
+    }
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (text) return JSON.parse(text);
+    lastErr = `${model}: empty response`;
   }
-
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Empty Gemini response");
-
-  return JSON.parse(text);
+  throw new Error(`Gemini failed on all models — ${lastErr}`);
 }
 
 async function callGroq(prompt: string): Promise<AICallResult> {

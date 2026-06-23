@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GEMINI_MODELS } from "@/lib/ai/models";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ Return a JSON array of 15 objects. Each must have:
 Mix of stocks from different sectors. Only include real, actively traded US stocks.
 Return ONLY the JSON array.`;
 
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  const models = GEMINI_MODELS;
   let picks: PennyPick[] = [];
 
   for (const model of models) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GEMINI_MODELS, geminiUrl } from "@/lib/ai/models";
 
 interface HoldingInput {
   ticker: string;
@@ -103,38 +104,48 @@ Rules:
 - urgency: high = act within days, medium = act within 1-2 weeks, low = no rush`;
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+    // Try each supported model in turn so a transient failure or a retired
+    // model doesn't take the whole feature down.
+    let rawText = "";
+    let lastStatus = 0;
+    let lastErr = "";
+    for (const model of GEMINI_MODELS) {
+      const geminiRes = await fetch(geminiUrl(model, GEMINI_KEY), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.4,
+          },
+        }),
+      }).catch(() => null);
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.4,
-        },
-      }),
-    });
-
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error("Gemini API error:", errText);
-      return NextResponse.json(
-        { error: "Failed to generate advice" },
-        { status: 502 }
-      );
+      if (!geminiRes) {
+        lastErr = `${model}: network error`;
+        continue;
+      }
+      if (!geminiRes.ok) {
+        lastStatus = geminiRes.status;
+        lastErr = `${model}: ${geminiRes.status} ${(await geminiRes.text()).slice(0, 200)}`;
+        console.error("[portfolio/advice] Gemini error:", lastErr);
+        continue;
+      }
+      const geminiData = await geminiRes.json();
+      rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      if (rawText) break;
+      lastErr = `${model}: empty response`;
     }
 
-    const geminiData = await geminiRes.json();
-    const rawText =
-      geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-
     if (!rawText) {
-      return NextResponse.json(
-        { error: "Empty AI response" },
-        { status: 502 }
-      );
+      // 429 = rate limited/quota; surface a clearer hint to the client.
+      const hint =
+        lastStatus === 429
+          ? "AI is rate-limited right now — try again in a minute."
+          : "AI couldn't generate advice. Check the AI service status.";
+      console.error("[portfolio/advice] all models failed:", lastErr);
+      return NextResponse.json({ error: hint }, { status: 502 });
     }
 
     let result: AdviceResponse;

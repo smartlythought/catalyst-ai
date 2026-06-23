@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GEMINI_MODELS } from "@/lib/ai/models";
 
 export const revalidate = 3600;
 
@@ -84,7 +85,7 @@ For each IPO, return a JSON array of objects with:
 Consider: industry trends, market conditions, company size, pricing, and sector momentum.
 Return ONLY the JSON array.`;
 
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  const models = GEMINI_MODELS;
 
   for (const model of models) {
     try {

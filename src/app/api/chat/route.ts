@@ -4,13 +4,12 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getQuote, getAnalystRatings, getCompanyProfile } from "@/lib/ingestion/market-data";
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { runResearchAgent } from "@/lib/ai/agent";
+import { GEMINI_MODELS, geminiUrl } from "@/lib/ai/models";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 const SYSTEM_PROMPT = `You are Catalyst AI — an expert stock market analyst that produces institutional-grade research. You combine data from multiple sources (SEC filings, analyst consensus, technical analysis, news sentiment) into honest, clear analysis.
 
@@ -134,26 +133,48 @@ export async function POST(request: NextRequest) {
 
   // Legacy single-shot fallback (used only if the agent path returned null).
   try {
-    const res = await fetch(`${GEMINI_URL}?key=${GEMINI_KEY}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.4,
-          topP: 0.9,
-          maxOutputTokens: 4096,
-        },
-      }),
-    });
+    let reply = "";
+    let lastStatus = 0;
+    let lastErr = "";
+    for (const model of GEMINI_MODELS) {
+      const res = await fetch(geminiUrl(model, GEMINI_KEY), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.4,
+            topP: 0.9,
+            maxOutputTokens: 4096,
+          },
+        }),
+      }).catch(() => null);
 
-    if (!res.ok) {
-      return NextResponse.json({ error: "AI request failed" }, { status: 502 });
+      if (!res) {
+        lastErr = `${model}: network error`;
+        continue;
+      }
+      if (!res.ok) {
+        lastStatus = res.status;
+        lastErr = `${model}: ${res.status} ${(await res.text()).slice(0, 200)}`;
+        console.error("[chat] Gemini error:", lastErr);
+        continue;
+      }
+      const data = await res.json();
+      reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      if (reply) break;
+      lastErr = `${model}: empty response`;
     }
 
-    const data = await res.json();
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate a response.";
+    if (!reply) {
+      console.error("[chat] all models failed:", lastErr);
+      const hint =
+        lastStatus === 429
+          ? "AI is rate-limited right now — try again in a minute."
+          : "AI request failed — the AI service may be unavailable or the API key needs attention.";
+      return NextResponse.json({ error: hint }, { status: 502 });
+    }
 
     return NextResponse.json({ reply });
   } catch {

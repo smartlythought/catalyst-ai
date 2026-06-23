@@ -112,7 +112,7 @@ async function fetchFMPMovers(
       ? "biggest-gainers"
       : kind === "losers"
         ? "biggest-losers"
-        : "most-actives";
+        : "most-active"; // stable endpoint is singular
 
   const urls = [
     `https://financialmodelingprep.com/stable/${stablePath}?apikey=${FMP_KEY}`,
