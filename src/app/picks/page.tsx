@@ -207,32 +207,20 @@ export default function PicksPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"short-term" | "long-term">("short-term");
 
-  function loadPicks(forceRefresh = false) {
+  function loadPicks() {
     setLoading(true);
     setError(null);
-    const url = forceRefresh ? "/api/picks/daily?refresh=1" : "/api/picks/daily";
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), forceRefresh ? 55000 : 15000);
-    fetch(url, { signal: controller.signal })
+    fetch("/api/picks/daily")
       .then((r) => {
-        if (!r.ok) throw new Error(r.status === 502 ? "AI generation failed — try again" : `Error ${r.status}`);
+        if (!r.ok) throw new Error(r.status === 502 ? "Picks are being generated — check back shortly" : `Error ${r.status}`);
         return r.json();
       })
       .then((d) => {
         if (d.error) throw new Error(d.error);
         setData(d);
       })
-      .catch((e) => {
-        if (e.name === "AbortError") {
-          setError("Request timed out — the AI is generating fresh picks. Try again in a minute.");
-        } else {
-          setError(e.message);
-        }
-      })
-      .finally(() => {
-        clearTimeout(timeout);
-        setLoading(false);
-      });
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => {
@@ -247,19 +235,9 @@ export default function PicksPage() {
   return (
     <div className="min-h-dvh pb-24 safe-top">
       <header className="px-5 pt-4 pb-2">
-        <div className="flex items-center justify-between">
-          <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
-            Daily Top 10
-          </h1>
-          {!loading && (
-            <button
-              onClick={() => loadPicks(true)}
-              className="text-[11px] font-bold text-accent-brand bg-accent-brand/10 border border-accent-brand/20 px-3 py-1.5 rounded-[8px] active:opacity-70"
-            >
-              Refresh
-            </button>
-          )}
-        </div>
+        <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
+          Daily Top 10
+        </h1>
         <p className="text-[13px] text-text-muted mt-1">
           AI-recommended buy &amp; sell picks with targets
         </p>
