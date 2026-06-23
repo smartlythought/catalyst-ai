@@ -8,7 +8,20 @@ import { TabBar } from "@/components/tab-bar";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  toolsUsed?: string[];
 }
+
+const TOOL_LABELS: Record<string, string> = {
+  get_quote: "live quote",
+  get_company_profile: "company profile",
+  get_analyst_ratings: "analyst ratings",
+  get_financials: "5-yr financials",
+  get_price_history: "price history",
+  get_news: "recent news",
+  get_insider_trades: "insider trades",
+  get_catalyst_signal: "Catalyst signal",
+  get_ecosystem: "ecosystem map",
+};
 
 export default function ChatPage() {
   return (
@@ -59,6 +72,8 @@ function ChatContent() {
     if (!msg || loading) return;
 
     setInput("");
+    // Snapshot history (before adding this turn) for multi-turn context.
+    const history = messages.map((m) => ({ role: m.role, content: m.content }));
     setMessages((prev) => [...prev, { role: "user", content: msg }]);
     setLoading(true);
 
@@ -66,12 +81,16 @@ function ChatContent() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg, ticker: tickerParam }),
+        body: JSON.stringify({ message: msg, ticker: tickerParam, history }),
       });
       const data = await res.json();
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.reply || data.error || "Something went wrong." },
+        {
+          role: "assistant",
+          content: data.reply || data.error || "Something went wrong.",
+          toolsUsed: Array.isArray(data.toolsUsed) ? data.toolsUsed : undefined,
+        },
       ]);
     } catch {
       setMessages((prev) => [
@@ -178,6 +197,25 @@ function ChatContent() {
                     .replace(/\n/g, "<br />"),
                 }}
               />
+              {m.role === "assistant" &&
+                m.toolsUsed &&
+                m.toolsUsed.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-border-hairline flex flex-wrap items-center gap-1.5">
+                    <svg width="11" height="11" viewBox="0 0 18 18" fill="none">
+                      <circle cx="8" cy="8" r="5.5" stroke="var(--text-faint)" strokeWidth="1.5" />
+                      <path d="M12 12L16 16" stroke="var(--text-faint)" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                    <span className="text-[10px] text-text-faint font-medium">Checked:</span>
+                    {m.toolsUsed.map((t) => (
+                      <span
+                        key={t}
+                        className="text-[9px] font-mono uppercase tracking-[0.5px] text-text-faint px-1.5 py-0.5 rounded bg-chip-bg border border-chip-border"
+                      >
+                        {TOOL_LABELS[t] || t}
+                      </span>
+                    ))}
+                  </div>
+                )}
             </div>
           </div>
         ))}

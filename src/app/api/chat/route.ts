@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getQuote, getAnalystRatings, getCompanyProfile } from "@/lib/ingestion/market-data";
 import { getCompanyNews } from "@/lib/ingestion/news";
+import { runResearchAgent } from "@/lib/ai/agent";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_URL =
@@ -71,13 +75,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { message, ticker, mode } = await request.json();
+  const { message, ticker, mode, history } = await request.json();
   if (!message) {
     return NextResponse.json({ error: "No message" }, { status: 400 });
   }
 
-  let context = "";
+  if (!GEMINI_KEY) {
+    return NextResponse.json({ error: "AI not configured" }, { status: 503 });
+  }
+
   const svc = createServiceClient();
+
+  // Primary path: the agentic research bot — it dynamically calls tools
+  // (quote, financials, news, insider trades, ecosystem, …) to ground its
+  // answer. Falls through to the legacy context-dump below on hard failure.
+  try {
+    const agentResult = await runResearchAgent({
+      message,
+      ticker,
+      history: Array.isArray(history) ? history : [],
+      ctx: { supabase: svc },
+    });
+    if (agentResult) {
+      return NextResponse.json({
+        reply: agentResult.reply,
+        toolsUsed: agentResult.toolsUsed,
+      });
+    }
+  } catch (e) {
+    console.log("[chat] agent failed, falling back:", e);
+  }
+
+  let context = "";
 
   if (ticker) {
     const symbol = ticker.toUpperCase();
@@ -103,10 +132,7 @@ export async function POST(request: NextRequest) {
     ? `${context}\n\nUser question: ${message}`
     : message;
 
-  if (!GEMINI_KEY) {
-    return NextResponse.json({ error: "AI not configured" }, { status: 503 });
-  }
-
+  // Legacy single-shot fallback (used only if the agent path returned null).
   try {
     const res = await fetch(`${GEMINI_URL}?key=${GEMINI_KEY}`, {
       method: "POST",
