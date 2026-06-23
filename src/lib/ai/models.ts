@@ -17,3 +17,33 @@ export const GEMINI_PRIMARY_MODEL = GEMINI_MODELS[0];
 export function geminiUrl(model: string, key: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 }
+
+/**
+ * POST to a Gemini model with one automatic retry on a transient 503
+ * ("model is experiencing high demand"). Returns the Response (ok or not),
+ * or null on a network error. Callers handle non-ok statuses (e.g. 429).
+ */
+export async function geminiFetch(
+  model: string,
+  key: string,
+  body: unknown,
+  timeoutMs = 25_000
+): Promise<Response | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(geminiUrl(model, key), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    }).catch(() => null);
+
+    if (!res) return null;
+    // 503 = transient overload; brief backoff then one retry.
+    if (res.status === 503 && attempt === 0) {
+      await new Promise((r) => setTimeout(r, 800));
+      continue;
+    }
+    return res;
+  }
+  return null;
+}

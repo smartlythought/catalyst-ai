@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GEMINI_MODELS, geminiUrl } from "@/lib/ai/models";
+import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 
 interface HoldingInput {
   ticker: string;
@@ -110,17 +110,13 @@ Rules:
     let lastStatus = 0;
     let lastErr = "";
     for (const model of GEMINI_MODELS) {
-      const geminiRes = await fetch(geminiUrl(model, GEMINI_KEY), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.4,
-          },
-        }),
-      }).catch(() => null);
+      const geminiRes = await geminiFetch(model, GEMINI_KEY, {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.4,
+        },
+      });
 
       if (!geminiRes) {
         lastErr = `${model}: network error`;

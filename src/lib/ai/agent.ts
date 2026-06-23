@@ -7,7 +7,7 @@ import {
 } from "@/lib/ingestion/market-data";
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { getEcosystemMap } from "@/lib/ingestion/ecosystem";
-import { GEMINI_MODELS } from "@/lib/ai/models";
+import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const FMP_KEY = process.env.FMP_API_KEY || "";
@@ -378,15 +378,11 @@ async function callGeminiWithTools(
 
   for (const model of MODELS) {
     try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
-        }
-      );
+      const res = await geminiFetch(model, GEMINI_KEY, body, GEMINI_TIMEOUT_MS);
+      if (!res) {
+        console.log(`[agent] Gemini ${model} network error`);
+        continue;
+      }
       if (!res.ok) {
         console.log(`[agent] Gemini ${model} ${res.status}`);
         continue;

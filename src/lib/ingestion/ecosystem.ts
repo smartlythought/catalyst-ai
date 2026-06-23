@@ -11,6 +11,15 @@ import { GEMINI_MODELS } from "@/lib/ai/models";
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const SEC_USER_AGENT = process.env.SEC_EDGAR_USER_AGENT || "Catalyst research@catalyst.claudeo.ai";
 
+// In-memory cache for AI-generated ecosystems, keyed by symbol. Survives within
+// a warm serverless instance — enough to stop repeat page views from each
+// triggering a fresh Gemini call. Relationships rarely change, so a long TTL.
+const AI_ECOSYSTEM_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const aiEcosystemCache = new Map<
+  string,
+  { edges: EcosystemEdge[]; at: number }
+>();
+
 type SignalTier = "S" | "A" | "B" | "C";
 
 interface EcosystemEdge {
@@ -247,8 +256,19 @@ export async function getEcosystemMap(ticker: string): Promise<EcosystemMap> {
       category: k.category,
     }));
   } else {
-    // No hardcoded data — generate via Gemini AI
-    edges = await generateEcosystemWithAI(symbol);
+    // No hardcoded data — generate via Gemini AI. Cache the result: ecosystem
+    // relationships barely change, and this route auto-loads on every stock
+    // page view, so without a cache each view burns a Gemini call.
+    const cached = aiEcosystemCache.get(symbol);
+    if (cached && Date.now() - cached.at < AI_ECOSYSTEM_TTL_MS) {
+      edges = cached.edges;
+    } else {
+      edges = await generateEcosystemWithAI(symbol);
+      // Only cache non-empty results so a transient failure isn't sticky.
+      if (edges.length > 0) {
+        aiEcosystemCache.set(symbol, { edges, at: Date.now() });
+      }
+    }
   }
 
   const relTypes = new Set(edges.map((e) => e.relationship)).size;

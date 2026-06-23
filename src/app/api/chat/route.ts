@@ -4,7 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getQuote, getAnalystRatings, getCompanyProfile } from "@/lib/ingestion/market-data";
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { runResearchAgent } from "@/lib/ai/agent";
-import { GEMINI_MODELS, geminiUrl } from "@/lib/ai/models";
+import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -137,19 +137,15 @@ export async function POST(request: NextRequest) {
     let lastStatus = 0;
     let lastErr = "";
     for (const model of GEMINI_MODELS) {
-      const res = await fetch(geminiUrl(model, GEMINI_KEY), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.4,
-            topP: 0.9,
-            maxOutputTokens: 4096,
-          },
-        }),
-      }).catch(() => null);
+      const res = await geminiFetch(model, GEMINI_KEY, {
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.4,
+          topP: 0.9,
+          maxOutputTokens: 4096,
+        },
+      });
 
       if (!res) {
         lastErr = `${model}: network error`;
