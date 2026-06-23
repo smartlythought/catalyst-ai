@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { sendDailyPicksDigest } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -405,6 +406,8 @@ export async function GET(request: Request) {
     const validated = validatePicks(picks, snapshots);
 
     await storePicks(tradingDate, validated, snapshots.length);
+
+    sendDailyPicksDigest(validated, tradingDate).catch(() => {});
 
     return NextResponse.json({
       picks: validated,
