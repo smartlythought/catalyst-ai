@@ -95,18 +95,28 @@ export default function StockDeepDivePage({
       .catch(() => {});
   }, [ticker, range]);
 
-  function loadEcosystem() {
-    if (ecoLoaded) return;
+  // Auto-load ecosystem once per ticker — no manual button needed.
+  useEffect(() => {
+    let cancelled = false;
+    setEcoLoaded(false);
+    setEcosystem([]);
     setEcoLoading(true);
     fetch(`/api/ecosystem/${ticker}`)
       .then((r) => r.json())
-      .then((d) => setEcosystem(d.edges || []))
+      .then((d) => {
+        if (!cancelled) setEcosystem(d.edges || []);
+      })
       .catch(() => {})
       .finally(() => {
-        setEcoLoading(false);
-        setEcoLoaded(true);
+        if (!cancelled) {
+          setEcoLoading(false);
+          setEcoLoaded(true);
+        }
       });
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [ticker]);
 
   async function toggleWatchlist() {
     const method = onWatchlist ? "DELETE" : "POST";
@@ -795,18 +805,6 @@ export default function StockDeepDivePage({
             Full map &rsaquo;
           </Link>
         </div>
-        {!ecoLoaded && !ecoLoading && (
-          <button
-            onClick={loadEcosystem}
-            className="w-full bg-surface-1 border border-border-1 rounded-[14px] p-4 flex items-center justify-center gap-2 text-[13px] font-medium text-accent-brand"
-          >
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M10 6v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            Load AI Ecosystem Analysis
-          </button>
-        )}
         {ecoLoading && (
           <div className="bg-surface-1 border border-border-1 rounded-[14px] p-6 flex items-center justify-center">
             <div className="w-5 h-5 border-2 border-accent-brand border-t-transparent rounded-full animate-spin" />

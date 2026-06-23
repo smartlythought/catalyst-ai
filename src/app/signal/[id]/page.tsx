@@ -38,13 +38,18 @@ export default function SignalDetailPage({
     async function load() {
       const pickMatch = id.match(/^pick-(.+)-(\d+)$/);
       if (pickMatch) {
+        const pickDate = pickMatch[1];
         const index = parseInt(pickMatch[2]);
         try {
           const res = await fetch("/api/picks/daily");
           const data = await res.json();
           const picks = data.picks;
-          if (Array.isArray(picks) && picks[index]) {
-            const p = picks[index];
+          const directHit = Array.isArray(picks) && picks[index];
+          const p = directHit || (Array.isArray(picks) && picks.find((_p: any, i: number) => {
+            const homeId = `pick-${pickDate}-${i}`;
+            return homeId === id;
+          })) || null;
+          if (p) {
             setSignal({
               id,
               ticker: p.symbol,

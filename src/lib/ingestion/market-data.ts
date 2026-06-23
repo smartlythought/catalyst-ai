@@ -350,6 +350,45 @@ export async function getHistoricalPrices(
     console.log(`[prices] ${symbol} no FINNHUB_KEY`);
   }
 
+  // Final fallback: Stooq — free, no API key, covers all US stocks.
+  // Returns daily EOD CSV (oldest first). Reliable when FMP/Finnhub
+  // historical endpoints are plan-gated (they 403 on free tiers).
+  try {
+    const stooqSymbol = `${symbol.toLowerCase()}.us`;
+    const res = await fetch(`https://stooq.com/q/d/l/?s=${stooqSymbol}&i=d`, {
+      next: { revalidate: 3600 },
+    });
+    if (res.ok) {
+      const csv = await res.text();
+      const rows = csv.trim().split("\n");
+      // Header: Date,Open,High,Low,Close,Volume
+      if (rows.length > 1 && rows[0].toLowerCase().startsWith("date")) {
+        const parsed = rows
+          .slice(1)
+          .map((line) => {
+            const cols = line.split(",");
+            return {
+              date: cols[0],
+              close: parseFloat(cols[4]),
+              volume: parseInt(cols[5]) || 0,
+            };
+          })
+          .filter((d) => d.date && !isNaN(d.close));
+        if (parsed.length > 0) {
+          // Newest first to match FMP shape, then slice to requested window.
+          const newestFirst = parsed.reverse().slice(0, days);
+          console.log(`[prices] ${symbol} Stooq OK: ${newestFirst.length} points`);
+          return newestFirst;
+        }
+      }
+      console.log(`[prices] ${symbol} Stooq empty/unparseable`);
+    } else {
+      console.log(`[prices] ${symbol} Stooq ${res.status}`);
+    }
+  } catch (e) {
+    console.log(`[prices] ${symbol} Stooq error:`, e);
+  }
+
   console.log(`[prices] ${symbol} NO DATA from any source`);
   return [];
 }

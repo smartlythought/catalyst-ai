@@ -12,7 +12,9 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServiceClient();
 
-  // Run DB + Finnhub searches in parallel for speed
+  // Run DB + Finnhub searches in parallel for speed.
+  // searchDB tries both the raw query and a space-stripped variant so
+  // multi-word queries like "service now" match "ServiceNow".
   const [dbResults, finnhubResults] = await Promise.all([
     searchDB(supabase, q),
     searchFinnhub(q),
@@ -28,7 +30,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  if (merged.length < 5 && FMP_KEY) {
+  // Always consult FMP — it has the broadest name coverage. Cheap to merge.
+  if (merged.length < 8 && FMP_KEY) {
     const fmpResults = await searchFMP(q);
     for (const r of fmpResults) {
       if (!seen.has(r.symbol)) {
@@ -40,7 +43,14 @@ export async function GET(request: NextRequest) {
 
   const upper = q.toUpperCase();
   const lower = q.toLowerCase();
-  merged.sort((a, b) => relevanceScore(a, upper, lower) - relevanceScore(b, upper, lower));
+  // Stripped variant ("servicenow") for compound-name matching.
+  const upperNoSpace = upper.replace(/\s+/g, "");
+  const lowerNoSpace = lower.replace(/\s+/g, "");
+  merged.sort(
+    (a, b) =>
+      relevanceScore(a, upper, lower, upperNoSpace, lowerNoSpace) -
+      relevanceScore(b, upper, lower, upperNoSpace, lowerNoSpace)
+  );
 
   return NextResponse.json({ results: merged.slice(0, 20) });
 }
@@ -54,12 +64,22 @@ interface SearchResult {
 }
 
 async function searchDB(supabase: any, q: string): Promise<SearchResult[]> {
-  // Search both active and inactive tickers for broader coverage
+  // Build OR filters for the raw query plus a space-stripped variant, so a
+  // query like "service now" also matches "ServiceNow". Commas/parens in the
+  // query would break PostgREST's .or() syntax, so sanitize them out.
+  const clean = (s: string) => s.replace(/[,()*]/g, "").trim();
+  const variants = Array.from(
+    new Set([clean(q), clean(q.replace(/\s+/g, ""))].filter(Boolean))
+  );
+  const orFilter = variants
+    .flatMap((v) => [`symbol.ilike.%${v}%`, `company_name.ilike.%${v}%`])
+    .join(",");
+
   const { data } = await supabase
     .from("tickers")
     .select("symbol, company_name, exchange, sector")
-    .or(`symbol.ilike.%${q}%,company_name.ilike.%${q}%`)
-    .limit(15);
+    .or(orFilter)
+    .limit(20);
 
   return (data || []).map((t: any) => ({
     symbol: t.symbol,
@@ -73,36 +93,54 @@ async function searchDB(supabase: any, q: string): Promise<SearchResult[]> {
 async function searchFinnhub(q: string): Promise<SearchResult[]> {
   if (!FINNHUB_KEY) return [];
 
-  try {
-    const res = await fetch(
-      `https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${FINNHUB_KEY}`
-    );
-    if (!res.ok) return [];
+  // Query the raw term and, if it contains spaces, the stripped variant too.
+  const noSpace = q.replace(/\s+/g, "");
+  const queries = noSpace !== q ? [q, noSpace] : [q];
 
-    const data = await res.json();
-    return (data.result || [])
-      .filter(
-        (item: any) =>
-          item.type === "Common Stock" &&
-          !item.symbol.includes(".")
-      )
-      .slice(0, 15)
-      .map((item: any) => ({
-        symbol: item.symbol,
-        name: item.description,
-        exchange: item.displaySymbol?.split(":")?.[0] || item.primary_exchange || null,
-        sector: null,
-        inDb: false,
-      }));
-  } catch {
-    return [];
+  const fetchOne = async (term: string): Promise<SearchResult[]> => {
+    try {
+      const res = await fetch(
+        `https://finnhub.io/api/v1/search?q=${encodeURIComponent(term)}&token=${FINNHUB_KEY}`
+      );
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.result || [])
+        .filter(
+          (item: any) =>
+            item.type === "Common Stock" && !item.symbol.includes(".")
+        )
+        .slice(0, 15)
+        .map((item: any) => ({
+          symbol: item.symbol,
+          name: item.description,
+          exchange:
+            item.displaySymbol?.split(":")?.[0] || item.primary_exchange || null,
+          sector: null,
+          inDb: false,
+        }));
+    } catch {
+      return [];
+    }
+  };
+
+  const batches = await Promise.all(queries.map(fetchOne));
+  const seen = new Set<string>();
+  const out: SearchResult[] = [];
+  for (const r of batches.flat()) {
+    if (!seen.has(r.symbol)) {
+      seen.add(r.symbol);
+      out.push(r);
+    }
   }
+  return out;
 }
 
 async function searchFMP(q: string): Promise<SearchResult[]> {
+  const noSpace = q.replace(/\s+/g, "");
+  const term = noSpace !== q ? noSpace : q;
   try {
     const res = await fetch(
-      `https://financialmodelingprep.com/stable/search?query=${encodeURIComponent(q)}&limit=10&apikey=${FMP_KEY}`
+      `https://financialmodelingprep.com/stable/search?query=${encodeURIComponent(term)}&limit=10&apikey=${FMP_KEY}`
     );
     if (!res.ok) return [];
 
@@ -119,14 +157,26 @@ async function searchFMP(q: string): Promise<SearchResult[]> {
   }
 }
 
-function relevanceScore(r: SearchResult, upper: string, lower: string): number {
+function relevanceScore(
+  r: SearchResult,
+  upper: string,
+  lower: string,
+  upperNoSpace: string,
+  lowerNoSpace: string
+): number {
   const sym = r.symbol.toUpperCase();
   const name = (r.name || "").toLowerCase();
-  if (sym === upper) return 0;
-  if (sym.startsWith(upper)) return 1;
-  if (name === lower) return 2;
-  if (name.startsWith(lower)) return 3;
-  if (name.includes(lower)) return 4;
-  if (sym.includes(upper)) return 5;
+  const nameNoSpace = name.replace(/\s+/g, "");
+
+  // Exact ticker match always wins.
+  if (sym === upper || sym === upperNoSpace) return 0;
+  if (sym.startsWith(upperNoSpace)) return 1;
+  // Exact company-name match (with or without spaces).
+  if (name === lower || nameNoSpace === lowerNoSpace) return 2;
+  // Name begins with the query.
+  if (name.startsWith(lower) || nameNoSpace.startsWith(lowerNoSpace)) return 3;
+  // Name contains the query.
+  if (name.includes(lower) || nameNoSpace.includes(lowerNoSpace)) return 4;
+  if (sym.includes(upperNoSpace)) return 5;
   return 6;
 }

@@ -335,10 +335,6 @@ async function getCachedPicks(tradingDate: string): Promise<any | null> {
 
     if (!data) return null;
 
-    const picks = data.picks;
-    const hasLongTerm = Array.isArray(picks) && picks.some((p: any) => p.timeframe === "long-term");
-    if (!hasLongTerm) return null;
-
     const age = Date.now() - new Date(data.generated_at).getTime();
     const maxAge = getMarketPhase() === "market-hours" ? 4 * 3600_000 : 12 * 3600_000;
 
