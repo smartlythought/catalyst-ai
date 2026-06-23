@@ -64,17 +64,63 @@ export default async function HomePage() {
           </span>
         </Link>
 
-        <div className="flex items-center justify-between">
-          <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
-            Today&apos;s calls
-          </h1>
-          <Link
-            href="/discover"
-            className="text-[12px] font-medium text-accent-brand px-3 py-1.5 rounded-full bg-accent-brand/10 border border-accent-brand/20"
-          >
-            Discover
+        {/* Discover hero */}
+        <div
+          className="rounded-[20px] p-4 mb-5 border border-accent-brand/25 overflow-hidden relative"
+          style={{
+            background: "linear-gradient(135deg, rgba(232,116,59,0.12) 0%, rgba(232,116,59,0.03) 100%)",
+          }}
+        >
+          <div className="absolute top-0 right-0 w-[120px] h-[120px] rounded-full opacity-[0.07]"
+            style={{ background: "radial-gradient(circle, var(--accent-brand), transparent 70%)", transform: "translate(30%, -30%)" }}
+          />
+          <Link href="/discover" className="flex items-center gap-3 mb-3 active:opacity-80 transition-opacity">
+            <div className="w-[42px] h-[42px] rounded-full bg-accent-brand/15 border border-accent-brand/25 flex items-center justify-center">
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                <circle cx="11" cy="11" r="8" stroke="var(--accent-brand)" strokeWidth="1.5"/>
+                <path d="M14.5 7.5L12.2 12.2L7.5 14.5L9.8 9.8L14.5 7.5Z" stroke="var(--accent-brand)" strokeWidth="1.5" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="text-[17px] font-extrabold text-accent-brand tracking-[-0.3px]">
+                Discover
+              </div>
+              <div className="text-[12px] text-text-muted">
+                Market movers, sectors, earnings &amp; AI picks
+              </div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="shrink-0">
+              <path d="M6 4L10 8L6 12" stroke="var(--accent-brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </Link>
+          <div className="flex gap-2">
+            <Link
+              href="/picks"
+              className="flex-1 bg-surface-1/60 backdrop-blur-sm border border-border-1/50 rounded-[12px] px-3 py-2 text-center active:opacity-80 transition-opacity"
+            >
+              <div className="text-[9px] text-text-faint font-mono uppercase tracking-[0.5px] mb-0.5">Top 10</div>
+              <div className="text-[13px] font-bold text-accent-brand">Daily Picks</div>
+            </Link>
+            <Link
+              href="/events"
+              className="flex-1 bg-surface-1/60 backdrop-blur-sm border border-border-1/50 rounded-[12px] px-3 py-2 text-center active:opacity-80 transition-opacity"
+            >
+              <div className="text-[9px] text-text-faint font-mono uppercase tracking-[0.5px] mb-0.5">Calendar</div>
+              <div className="text-[13px] font-bold">Earnings</div>
+            </Link>
+            <Link
+              href="/ipo"
+              className="flex-1 bg-surface-1/60 backdrop-blur-sm border border-border-1/50 rounded-[12px] px-3 py-2 text-center active:opacity-80 transition-opacity"
+            >
+              <div className="text-[9px] text-text-faint font-mono uppercase tracking-[0.5px] mb-0.5">New</div>
+              <div className="text-[13px] font-bold text-pos-green">IPOs</div>
+            </Link>
+          </div>
         </div>
+
+        <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
+          Today&apos;s calls
+        </h1>
 
         {/* Stats strip */}
         <div className="flex items-center gap-4 mt-3">

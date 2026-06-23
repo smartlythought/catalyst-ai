@@ -23,24 +23,13 @@ const tabs = [
     ),
   },
   {
-    name: "Search",
-    href: "/search",
-    match: (p: string) => p.startsWith("/search") || p.startsWith("/stock"),
+    name: "Discover",
+    href: "/discover",
+    match: (p: string) => p.startsWith("/discover") || p.startsWith("/picks") || p.startsWith("/ipo") || p.startsWith("/penny") || p.startsWith("/events"),
     icon: (active: boolean) => (
       <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
-        <circle
-          cx="10"
-          cy="10"
-          r="6"
-          stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"}
-          strokeWidth="1.5"
-        />
-        <path
-          d="M14.5 14.5L19 19"
-          stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
+        <circle cx="11" cy="11" r="8" stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"} strokeWidth="1.5"/>
+        <path d="M14.5 7.5L12.2 12.2L7.5 14.5L9.8 9.8L14.5 7.5Z" stroke={active ? "var(--accent-brand)" : "var(--tab-inactive)"} strokeWidth="1.5" strokeLinejoin="round"/>
       </svg>
     ),
   },
