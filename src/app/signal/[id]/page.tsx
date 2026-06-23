@@ -35,6 +35,52 @@ export default function SignalDetailPage({
 
   useEffect(() => {
     async function load() {
+      const pickMatch = id.match(/^pick-(.+)-(\d+)$/);
+      if (pickMatch) {
+        const index = parseInt(pickMatch[2]);
+        try {
+          const res = await fetch("/api/picks/daily");
+          const data = await res.json();
+          const picks = data.picks;
+          if (Array.isArray(picks) && picks[index]) {
+            const p = picks[index];
+            setSignal({
+              id,
+              ticker: p.symbol,
+              company: p.companyName,
+              exchange: "NASDAQ",
+              price: p.currentPrice || p.entryPrice,
+              change: 0,
+              changePercent: 0,
+              call: p.action === "SELL" ? "REDUCE" : "BUY",
+              conviction: p.conviction,
+              horizon: p.timeframe === "short-term" ? "1–4 weeks" : "1–6 months",
+              entry: p.entryPrice,
+              target: p.targetPrice,
+              stop: p.stopLoss,
+              riskReward: p.entryPrice && p.targetPrice && p.stopLoss
+                ? `1:${(Math.abs(p.targetPrice - p.entryPrice) / Math.abs(p.entryPrice - p.stopLoss)).toFixed(1)}`
+                : undefined,
+              why: p.rationale,
+              tags: (p.catalysts || []).slice(0, 3),
+              signals: (p.catalysts || []).map((c: string) => ({
+                type: "NEWS" as const,
+                title: c,
+                detail: "",
+                sentiment: p.action === "SELL" ? ("negative" as const) : ("positive" as const),
+              })),
+              sparkline: [],
+              timestamp: data.generatedAt || new Date().toISOString(),
+            });
+            setLoading(false);
+            return;
+          }
+        } catch {}
+        setSignal(null);
+        setLoading(false);
+        return;
+      }
+
       try {
         const res = await fetch(`/api/signals`);
         const data = await res.json();
