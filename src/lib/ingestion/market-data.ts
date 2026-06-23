@@ -292,18 +292,22 @@ export async function getHistoricalPrices(
   symbol: string,
   days = 90
 ): Promise<{ date: string; close: number; volume: number }[]> {
-  // Try FMP stable historical, then v3 fallback
   if (FMP_KEY) {
-    for (const url of [
+    const urls = [
       `${FMP_STABLE}/historical-price-eod/full?symbol=${symbol}&apikey=${FMP_KEY}`,
       `https://financialmodelingprep.com/api/v3/historical-price-full/${symbol}?apikey=${FMP_KEY}`,
-    ]) {
+    ];
+    for (const url of urls) {
       try {
         const res = await fetch(url);
-        if (!res.ok) continue;
+        if (!res.ok) {
+          console.log(`[prices] ${symbol} FMP ${res.status}: ${url.split("?")[0]}`);
+          continue;
+        }
         const data = await res.json();
         const hist = data?.historical || (Array.isArray(data) ? data : []);
         if (hist.length > 0) {
+          console.log(`[prices] ${symbol} FMP OK: ${hist.length} points`);
           return hist.slice(0, days).map(
             (d: { date: string; close: number; volume: number }) => ({
               date: d.date,
@@ -312,11 +316,15 @@ export async function getHistoricalPrices(
             })
           );
         }
-      } catch {}
+        console.log(`[prices] ${symbol} FMP empty response from ${url.split("/stable/")[1]?.split("?")[0] || url.split("/v3/")[1]?.split("?")[0] || "?"}`);
+      } catch (e) {
+        console.log(`[prices] ${symbol} FMP error:`, e);
+      }
     }
+  } else {
+    console.log(`[prices] ${symbol} no FMP_KEY`);
   }
 
-  // Fallback: Finnhub candles
   if (FINNHUB_KEY) {
     try {
       const to = Math.floor(Date.now() / 1000);
@@ -327,15 +335,22 @@ export async function getHistoricalPrices(
       );
       const data = await res.json();
       if (data.s === "ok" && data.c?.length) {
+        console.log(`[prices] ${symbol} Finnhub OK: ${data.c.length} candles`);
         return data.t.map((t: number, i: number) => ({
           date: new Date(t * 1000).toISOString().split("T")[0],
           close: data.c[i],
           volume: data.v?.[i] || 0,
         }));
       }
-    } catch {}
+      console.log(`[prices] ${symbol} Finnhub status: ${data.s}`);
+    } catch (e) {
+      console.log(`[prices] ${symbol} Finnhub error:`, e);
+    }
+  } else {
+    console.log(`[prices] ${symbol} no FINNHUB_KEY`);
   }
 
+  console.log(`[prices] ${symbol} NO DATA from any source`);
   return [];
 }
 

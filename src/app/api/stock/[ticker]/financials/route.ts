@@ -36,7 +36,13 @@ export async function GET(
     ).catch(() => null);
     if (stableRes?.ok) {
       const data = await stableRes.json();
-      if (Array.isArray(data) && data.length > 0) return data;
+      if (Array.isArray(data) && data.length > 0) {
+        console.log(`[financials] ${symbol} ${stableEndpoint} stable OK: ${data.length} rows`);
+        return data;
+      }
+      console.log(`[financials] ${symbol} ${stableEndpoint} stable empty`);
+    } else {
+      console.log(`[financials] ${symbol} ${stableEndpoint} stable ${stableRes?.status || "failed"}`);
     }
     const v3Res = await fetch(
       `https://financialmodelingprep.com/api/v3/${v3Endpoint}/${symbol}?period=annual&limit=5&apikey=${FMP_KEY}`,
@@ -44,7 +50,13 @@ export async function GET(
     ).catch(() => null);
     if (v3Res?.ok) {
       const data = await v3Res.json();
-      if (Array.isArray(data) && data.length > 0) return data;
+      if (Array.isArray(data) && data.length > 0) {
+        console.log(`[financials] ${symbol} ${v3Endpoint} v3 OK: ${data.length} rows`);
+        return data;
+      }
+      console.log(`[financials] ${symbol} ${v3Endpoint} v3 empty`);
+    } else {
+      console.log(`[financials] ${symbol} ${v3Endpoint} v3 ${v3Res?.status || "failed"}`);
     }
     return [];
   }

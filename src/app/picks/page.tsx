@@ -211,14 +211,28 @@ export default function PicksPage() {
     setLoading(true);
     setError(null);
     const url = forceRefresh ? "/api/picks/daily?refresh=1" : "/api/picks/daily";
-    fetch(url)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), forceRefresh ? 55000 : 15000);
+    fetch(url, { signal: controller.signal })
       .then((r) => {
-        if (!r.ok) throw new Error("Failed to load picks");
+        if (!r.ok) throw new Error(r.status === 502 ? "AI generation failed — try again" : `Error ${r.status}`);
         return r.json();
       })
-      .then((d) => setData(d))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .then((d) => {
+        if (d.error) throw new Error(d.error);
+        setData(d);
+      })
+      .catch((e) => {
+        if (e.name === "AbortError") {
+          setError("Request timed out — the AI is generating fresh picks. Try again in a minute.");
+        } else {
+          setError(e.message);
+        }
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        setLoading(false);
+      });
   }
 
   useEffect(() => {

@@ -198,10 +198,9 @@ async function buildSnapshots(): Promise<StockSnapshot[]> {
   return snapshots;
 }
 
-function buildPrompt(snapshots: StockSnapshot[], today: string, phase: string): string {
+function buildStockData(snapshots: StockSnapshot[]): string {
   const shuffled = [...snapshots].sort(() => Math.random() - 0.5);
-
-  const stockData = shuffled.map(s => {
+  return shuffled.map(s => {
     let line = `${s.symbol} | $${s.price.toFixed(2)} | ${s.changePct >= 0 ? "+" : ""}${s.changePct.toFixed(2)}%`;
     if (s.pe > 0) line += ` | PE:${s.pe.toFixed(1)}`;
     if (s.marketCap > 0) line += ` | MCap:$${(s.marketCap / 1e9).toFixed(0)}B`;
@@ -211,7 +210,9 @@ function buildPrompt(snapshots: StockSnapshot[], today: string, phase: string): 
     if (s.targetMean > 0) line += ` | AvgPT:$${s.targetMean.toFixed(2)}`;
     return line;
   }).join("\n");
+}
 
+function buildShortTermPrompt(stockData: string, count: number, today: string, phase: string): string {
   const phaseHint = phase === "pre-market"
     ? "Focus on pre-market movers and gap-up/gap-down setups."
     : phase === "after-hours"
@@ -219,49 +220,50 @@ function buildPrompt(snapshots: StockSnapshot[], today: string, phase: string): 
       : "Focus on intraday momentum and swing trade setups.";
 
   return `You are an elite stock analyst. Today is ${today} (${phase}). ${phaseHint}
-Below are REAL live prices and data for ${snapshots.length} US stocks.
+Below are REAL live prices and data for US stocks.
 
 LIVE MARKET DATA:
 ${stockData}
 
-TASK: Select exactly 20 stocks — 10 SHORT-TERM picks and 10 LONG-TERM picks.
-Be creative and diverse — avoid defaulting to just mega-cap tech. Look across ALL sectors for the best risk/reward setups.
+TASK: Select exactly 10 stocks for SHORT-TERM trades (1–4 weeks).
+Focus on momentum, swing trades, catalysts, earnings plays, sector rotation.
 
-SHORT-TERM PICKS (10 picks, timeframe: "short-term"):
-- Horizon: 1–4 weeks. Focus on momentum, swing trades, catalysts, earnings plays.
-- Entry price within 1-3% of current price.
-- BUY target: 5-15% upside. SELL target: 5-15% downside.
-- Stop loss: 3-7% from entry.
+RULES:
+1. Entry price within 1-3% of current price — users act TODAY.
+2. BUY target: 5-15% upside. SELL target: 5-15% downside. Stop loss: 3-7%.
+3. Risk:reward at least 2:1. Conviction 70+ = high confidence.
+4. Pick from at least 5 different sectors. Max 2 per sector.
+5. Include at least 2 mid-cap stocks (market cap under $50B).
+6. 7-8 BUY, 2-3 SELL.
 
-LONG-TERM PICKS (10 picks, timeframe: "long-term"):
-- Horizon: 1–6 months. Focus on fundamental value, sector tailwinds, analyst upgrades, macro themes.
-- Entry price within 1-5% of current price.
-- BUY target: 10-30% upside. SELL target: 10-25% downside.
-- Stop loss: 5-12% from entry.
-- Prioritize stocks where analyst consensus target is significantly above/below current price.
+Return a JSON array of exactly 10 objects with: "symbol", "companyName", "action" (BUY/SELL), "entryPrice", "targetPrice", "stopLoss", "timeframe" (always "short-term"), "conviction" (50-95), "rationale" (2 sentences), "catalysts" (array of 2-3). Return ONLY the JSON array.`;
+}
 
-CRITICAL RULES FOR ALL PICKS:
-1. Risk:reward ratio must be at least 2:1
-2. Conviction 70+ means you are very confident based on the data
-3. DO NOT pick stocks that are already at 52-week highs unless they have strong analyst upgrades
-4. Favor stocks where analyst target price suggests meaningful upside/downside
-5. MANDATORY: Across all 20 picks, use at least 8 different sectors. No more than 3 picks from the same sector.
-6. Include at least 5 mid-cap or smaller stocks (market cap under $50B) across all picks.
-7. NO duplicate symbols — each stock appears at most once.
+function buildLongTermPrompt(stockData: string, count: number, today: string, excludeSymbols: string[]): string {
+  const excludeNote = excludeSymbols.length > 0
+    ? `\nDO NOT pick these symbols (already in short-term picks): ${excludeSymbols.join(", ")}`
+    : "";
 
-Return a JSON array of exactly 20 objects:
-- "symbol": ticker
-- "companyName": company name
-- "action": "BUY" or "SELL"
-- "entryPrice": price near current price
-- "targetPrice": realistic target based on analyst targets and technicals
-- "stopLoss": protective stop loss
-- "timeframe": "short-term" or "long-term"
-- "conviction": integer 50-95
-- "rationale": 2 sentences explaining WHY based on the real data above
-- "catalysts": array of 2-3 specific catalysts
+  return `You are an elite stock analyst focused on VALUE and GROWTH investing. Today is ${today}.
+Below are REAL live prices and data for US stocks.
 
-Include 14-16 BUY and 4-6 SELL across both timeframes. Return ONLY the JSON array.`;
+LIVE MARKET DATA:
+${stockData}
+
+TASK: Select exactly 10 stocks for LONG-TERM positions (1–6 months).
+Focus on fundamental value, sector tailwinds, analyst upgrades, macro themes, undervalued stocks.
+${excludeNote}
+
+RULES:
+1. Entry price within 1-5% of current price.
+2. BUY target: 10-30% upside. SELL target: 10-25% downside. Stop loss: 5-12%.
+3. Risk:reward at least 2:1. Conviction 70+ = high confidence.
+4. Prioritize stocks where analyst target is significantly above/below current price.
+5. Pick from at least 5 different sectors. Max 2 per sector.
+6. Include at least 3 mid-cap stocks (market cap under $50B).
+7. 7-8 BUY, 2-3 SELL.
+
+Return a JSON array of exactly 10 objects with: "symbol", "companyName", "action" (BUY/SELL), "entryPrice", "targetPrice", "stopLoss", "timeframe" (always "long-term"), "conviction" (50-95), "rationale" (2 sentences), "catalysts" (array of 2-3). Return ONLY the JSON array.`;
 }
 
 function validatePicks(picks: Pick[], snapshots: StockSnapshot[]): Pick[] {
@@ -377,6 +379,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    console.log("[picks] Building snapshots...");
     const snapshots = await buildSnapshots();
 
     if (snapshots.length < 10) {
@@ -387,37 +390,52 @@ export async function GET(request: Request) {
     }
 
     const phase = getMarketPhase();
-    const prompt = buildPrompt(snapshots, tradingDate, phase);
+    const stockData = buildStockData(snapshots);
 
-    const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
-    let picks: Pick[] = [];
-
-    for (const model of models) {
-      try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.7,
-              },
-            }),
-          }
-        );
-
-        if (!res.ok) continue;
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) continue;
-
-        picks = JSON.parse(text);
-        if (Array.isArray(picks) && picks.length > 0) break;
-      } catch { continue; }
+    async function callGemini(prompt: string): Promise<Pick[]> {
+      const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+      for (const model of models) {
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  temperature: 0.7,
+                },
+              }),
+              signal: AbortSignal.timeout(25000),
+            }
+          );
+          if (!res.ok) { console.log(`[picks] Gemini ${model} ${res.status}`); continue; }
+          const data = await res.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!text) continue;
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch (e) {
+          console.log(`[picks] Gemini ${model} error:`, e);
+          continue;
+        }
+      }
+      return [];
     }
+
+    console.log("[picks] Generating short-term + long-term in parallel...");
+    const shortPrompt = buildShortTermPrompt(stockData, snapshots.length, tradingDate, phase);
+    const longPrompt = buildLongTermPrompt(stockData, snapshots.length, tradingDate, []);
+
+    const [shortPicks, longPicks] = await Promise.all([
+      callGemini(shortPrompt),
+      callGemini(longPrompt),
+    ]);
+
+    console.log(`[picks] Got ${shortPicks.length} short + ${longPicks.length} long picks`);
+    const picks = [...shortPicks, ...longPicks];
 
     if (!picks.length) {
       return NextResponse.json({ error: "Failed to generate picks" }, { status: 502 });
