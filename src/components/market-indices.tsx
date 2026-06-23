@@ -9,6 +9,7 @@ interface IndexQuote {
   price: number;
   change: number;
   changePercent: number;
+  isFuture?: boolean;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -20,6 +21,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 export function MarketIndices() {
   const [indices, setIndices] = useState<IndexQuote[]>([]);
+  const [futures, setFutures] = useState<IndexQuote[]>([]);
   const [marketStatus, setMarketStatus] = useState<string>("closed");
   const [loaded, setLoaded] = useState(false);
 
@@ -33,6 +35,7 @@ export function MarketIndices() {
         const data = await res.json();
         if (mounted) {
           setIndices(data.indices || []);
+          setFutures(data.futures || []);
           setMarketStatus(data.marketStatus || "closed");
           setLoaded(true);
         }
@@ -117,6 +120,50 @@ export function MarketIndices() {
           );
         })}
       </div>
+      {futures.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar px-5 mt-2">
+          <span className="font-mono text-[9px] font-medium text-text-faint tracking-[0.5px] uppercase shrink-0">
+            Futures
+          </span>
+          {futures.map((f) => {
+            const isUp = f.changePercent >= 0;
+            return (
+              <div
+                key={f.symbol}
+                className="shrink-0 flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 border"
+                style={{
+                  backgroundColor: isUp
+                    ? "rgba(22, 199, 132, 0.04)"
+                    : "rgba(234, 57, 67, 0.04)",
+                  borderColor: isUp
+                    ? "rgba(22, 199, 132, 0.12)"
+                    : "rgba(234, 57, 67, 0.12)",
+                }}
+              >
+                <span className="font-mono text-[10px] font-semibold text-text-muted">
+                  {f.shortName}
+                </span>
+                <span className="font-mono text-[12px] font-bold">
+                  {f.price >= 1000
+                    ? f.price.toLocaleString("en-US", { maximumFractionDigits: 0 })
+                    : f.price.toFixed(2)}
+                </span>
+                <span
+                  className="font-mono text-[10px] font-medium"
+                  style={{
+                    color: isUp
+                      ? "var(--pos-green-bright)"
+                      : "var(--neg-red-bright)",
+                  }}
+                >
+                  {isUp ? "+" : ""}
+                  {f.changePercent.toFixed(2)}%
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -13,6 +13,11 @@ const INDICES = [
   { symbol: "^VIX", fmpSymbol: "^VIX", name: "VIX", shortName: "VIX" },
 ];
 
+const FUTURES = [
+  { symbol: "ES=F", finnhub: "ES", name: "S&P Futures", shortName: "ES" },
+  { symbol: "NQ=F", finnhub: "NQ", name: "NASDAQ Futures", shortName: "NQ" },
+];
+
 interface IndexQuote {
   symbol: string;
   name: string;
@@ -20,6 +25,7 @@ interface IndexQuote {
   price: number;
   change: number;
   changePercent: number;
+  isFuture?: boolean;
 }
 
 async function fetchViaFMP(): Promise<IndexQuote[]> {
@@ -101,11 +107,47 @@ async function fetchViaFinnhub(): Promise<IndexQuote[]> {
   return results;
 }
 
-export async function GET() {
-  let indices = await fetchViaFMP();
-  if (indices.length < 3) {
-    indices = await fetchViaFinnhub();
+async function fetchFutures(): Promise<IndexQuote[]> {
+  if (!FINNHUB_KEY) return [];
+  const results: IndexQuote[] = [];
+  const quotes = await Promise.all(
+    FUTURES.map(async (f) => {
+      try {
+        const res = await fetch(
+          `https://finnhub.io/api/v1/quote?symbol=${f.finnhub}&token=${FINNHUB_KEY}`,
+          { next: { revalidate: 60 } }
+        );
+        const d = await res.json();
+        if (d.c > 0) {
+          return {
+            symbol: f.symbol,
+            name: f.name,
+            shortName: f.shortName,
+            price: d.c,
+            change: d.d ?? 0,
+            changePercent: d.dp ?? 0,
+            isFuture: true,
+          };
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    })
+  );
+  for (const q of quotes) {
+    if (q) results.push(q);
   }
+  return results;
+}
+
+export async function GET() {
+  const [indicesResult, futuresResult] = await Promise.all([
+    fetchViaFMP().then((r) => (r.length >= 3 ? r : fetchViaFinnhub())),
+    fetchFutures(),
+  ]);
+  const indices = indicesResult;
+  const futures = futuresResult;
 
   const now = new Date();
   const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
@@ -129,6 +171,7 @@ export async function GET() {
 
   return NextResponse.json({
     indices,
+    futures,
     marketStatus,
     timestamp: now.toISOString(),
   });

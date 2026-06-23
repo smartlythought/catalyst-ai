@@ -5,6 +5,8 @@ import Link from "next/link";
 import { callColor, formatPercent, formatMarketCap } from "@/lib/utils";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
+import { FinancialsChart } from "@/components/financials-chart";
+import { useRealtimePrice } from "@/hooks/use-realtime-price";
 
 interface NewsItem {
   title: string;
@@ -78,6 +80,7 @@ export default function StockDeepDivePage({
   const [ecoLoading, setEcoLoading] = useState(false);
   const [ecoLoaded, setEcoLoaded] = useState(false);
   const chartRef = useRef<SVGSVGElement>(null);
+  const livePrice = useRealtimePrice(ticker.toUpperCase());
 
   useEffect(() => {
     fetch(`/api/stock/${ticker}?range=${range}`)
@@ -115,9 +118,10 @@ export default function StockDeepDivePage({
     }).catch(() => setOnWatchlist(onWatchlist));
   }
 
-  const price = data?.quote?.price ?? 0;
-  const change = data?.quote?.change ?? 0;
-  const changePercent = data?.quote?.changePercent ?? 0;
+  const basePrice = data?.quote?.price ?? 0;
+  const price = livePrice?.price ?? basePrice;
+  const change = livePrice ? price - (basePrice - (data?.quote?.change ?? 0)) : (data?.quote?.change ?? 0);
+  const changePercent = basePrice > 0 && livePrice ? (change / (basePrice - (data?.quote?.change ?? 0))) * 100 : (data?.quote?.changePercent ?? 0);
   const company = data?.profile?.name ?? ticker.toUpperCase();
   const exchange = data?.profile?.exchange ?? "NASDAQ";
   const changeColor =
@@ -246,8 +250,15 @@ export default function StockDeepDivePage({
           </div>
           {price > 0 && (
             <div className="text-right">
-              <div className="font-mono text-[22px] font-bold">
-                ${price.toFixed(2)}
+              <div className="flex items-center justify-end gap-1.5">
+                {livePrice && (
+                  <span className="text-[8px] font-bold tracking-[0.5px] uppercase text-pos-green bg-pos-green/15 px-1.5 py-0.5 rounded animate-pulse">
+                    Live
+                  </span>
+                )}
+                <span className="font-mono text-[22px] font-bold">
+                  ${price.toFixed(2)}
+                </span>
               </div>
               <div
                 className="font-mono text-[14px] font-medium"
@@ -699,6 +710,9 @@ export default function StockDeepDivePage({
           </div>
         </div>
       )}
+
+      {/* 5-Year Financials */}
+      <FinancialsChart ticker={ticker.toUpperCase()} />
 
       {/* Volume chart */}
       {chartData.length > 1 && (
