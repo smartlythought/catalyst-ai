@@ -19,6 +19,9 @@ export default function AccountPage() {
   const [emailTestSending, setEmailTestSending] = useState(false);
   const [emailTestResult, setEmailTestResult] = useState<"ok" | "fail" | null>(null);
   const [emailTestError, setEmailTestError] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState("");
+  const [tzSaving, setTzSaving] = useState(false);
+  const [tzSaved, setTzSaved] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -42,6 +45,7 @@ export default function AccountPage() {
 
       setProfile(data);
       if (data?.whatsapp_number) setWhatsappNumber(data.whatsapp_number);
+      setTimezone(data?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
     }
     load();
   }, [router]);
@@ -112,6 +116,17 @@ export default function AccountPage() {
     }
     setEmailTestSending(false);
     setTimeout(() => { setEmailTestResult(null); setEmailTestError(null); }, 8000);
+  }
+
+  async function saveTimezone(tz: string) {
+    if (!user) return;
+    setTimezone(tz);
+    setTzSaving(true);
+    const supabase = createClient();
+    await supabase.from("user_profiles").update({ timezone: tz }).eq("id", user.id);
+    setTzSaving(false);
+    setTzSaved(true);
+    setTimeout(() => setTzSaved(false), 2000);
   }
 
   async function handleSignOut() {
@@ -191,16 +206,10 @@ export default function AccountPage() {
                 label: "Capital",
                 value: profile.capital_range || "—",
               },
-              {
-                label: "Timezone",
-                value: profile.timezone?.replace(/_/g, " ").replace(/\//g, " / ") || Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/_/g, " "),
-              },
             ].map((item, i) => (
               <div
                 key={item.label}
-                className={`flex items-center justify-between px-4 py-3.5 ${
-                  i < 3 ? "border-b border-border-hairline" : ""
-                }`}
+                className={`flex items-center justify-between px-4 py-3.5 border-b border-border-hairline`}
               >
                 <span className="text-[14px] text-text-muted">
                   {item.label}
@@ -208,6 +217,36 @@ export default function AccountPage() {
                 <span className="text-[14px] font-semibold">{item.value}</span>
               </div>
             ))}
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="text-[14px] text-text-muted shrink-0 mr-3">Timezone</span>
+              <div className="flex items-center gap-2">
+                {tzSaved && (
+                  <span className="text-[10px] text-pos-green font-mono">Saved</span>
+                )}
+                <select
+                  value={timezone}
+                  onChange={(e) => saveTimezone(e.target.value)}
+                  disabled={tzSaving}
+                  className="text-[13px] font-semibold bg-surface-2 border border-border-1 rounded-[8px] px-2.5 py-1.5 text-text-primary outline-none focus:border-accent-brand max-w-[200px] truncate"
+                >
+                  {[
+                    { id: "America/New_York", label: "US Eastern (ET)" },
+                    { id: "America/Chicago", label: "US Central (CT)" },
+                    { id: "America/Denver", label: "US Mountain (MT)" },
+                    { id: "America/Los_Angeles", label: "US Pacific (PT)" },
+                    { id: "Asia/Kolkata", label: "India (IST)" },
+                    { id: "Europe/London", label: "UK (GMT/BST)" },
+                    { id: "Europe/Berlin", label: "Central Europe (CET)" },
+                    { id: "Asia/Tokyo", label: "Japan (JST)" },
+                    { id: "Asia/Singapore", label: "Singapore (SGT)" },
+                    { id: "Australia/Sydney", label: "Australia (AEST)" },
+                    { id: "Asia/Dubai", label: "UAE (GST)" },
+                  ].map((tz) => (
+                    <option key={tz.id} value={tz.id}>{tz.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         )}
 

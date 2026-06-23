@@ -41,6 +41,17 @@ interface PulseData {
   gainers: MarketItem[];
   losers: MarketItem[];
   mostActive: MarketItem[];
+  updatedAt?: string;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 export default function DiscoverPage() {
@@ -49,9 +60,12 @@ export default function DiscoverPage() {
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [tab, setTab] = useState<"gainers" | "losers" | "active">("gainers");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [exploreTicker, setExploreTicker] = useState("");
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  useEffect(() => {
+  function loadData(isRefresh = false) {
+    if (isRefresh) setRefreshing(true);
     Promise.all([
       fetch("/api/market/pulse").then((r) => r.json()),
       fetch("/api/market/earnings").then((r) => r.json()),
@@ -59,9 +73,19 @@ export default function DiscoverPage() {
       .then(([p, e]) => {
         setPulse(p);
         setEarnings(e.earnings || []);
+        setLastUpdated(p.updatedAt || new Date().toISOString());
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+  }
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(() => loadData(), 60000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) {
@@ -82,9 +106,28 @@ export default function DiscoverPage() {
   return (
     <div className="min-h-dvh pb-24 safe-top">
       <header className="px-5 pt-4 pb-4">
-        <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
-          Discover
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
+            Discover
+          </h1>
+          <div className="flex items-center gap-2">
+            {lastUpdated && (
+              <span className="font-mono text-[10px] text-text-faint">
+                {timeAgo(lastUpdated)}
+              </span>
+            )}
+            <button
+              onClick={() => loadData(true)}
+              disabled={refreshing}
+              className={`w-[28px] h-[28px] rounded-full border border-border-1 bg-surface-1 flex items-center justify-center ${refreshing ? "animate-spin" : ""}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M14 8A6 6 0 1 1 8 2" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round"/>
+                <path d="M14 2V6H10" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
         <p className="text-[13px] text-text-muted mt-1">
           Market overview and trends
         </p>

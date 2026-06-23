@@ -87,6 +87,8 @@ async function fetchMarketQuotes(): Promise<MarketQuote[]> {
   return results;
 }
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const supabase = createServiceClient();
 
@@ -105,6 +107,7 @@ export async function GET() {
     gainers: gainersLosers.gainers,
     losers: gainersLosers.losers,
     mostActive: gainersLosers.mostActive,
+    updatedAt: new Date().toISOString(),
   });
 }
 

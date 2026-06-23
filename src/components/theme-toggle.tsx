@@ -22,25 +22,24 @@ export function ThemeToggle() {
     localStorage.setItem("catalyst_theme", next);
   }
 
+  const isDark = theme === "dark";
+
   return (
     <button
       onClick={toggle}
       className="flex items-center justify-between w-full px-4 py-3.5"
     >
-      <span className="text-[15px] font-medium">
-        {theme === "dark" ? "Light mode" : "Dark mode"}
-      </span>
+      <span className="text-[15px] font-medium">Dark mode</span>
       <div
         className="relative w-[44px] h-[24px] rounded-full transition-colors"
         style={{
-          backgroundColor:
-            theme === "light" ? "var(--toggle-on)" : "var(--toggle-off)",
+          backgroundColor: isDark ? "var(--toggle-on)" : "var(--toggle-off)",
         }}
       >
         <div
           className="absolute top-[2px] w-[20px] h-[20px] rounded-full bg-white shadow-sm transition-transform"
           style={{
-            left: theme === "light" ? "22px" : "2px",
+            left: isDark ? "22px" : "2px",
           }}
         />
       </div>
