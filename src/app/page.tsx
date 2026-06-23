@@ -37,7 +37,7 @@ export default async function HomePage() {
   let signals: Signal[] = [];
 
   if (row?.picks && Array.isArray(row.picks)) {
-    signals = row.picks.map((p: any, i: number) => ({
+    const allSignals = row.picks.map((p: any, i: number) => ({
       id: `pick-${tradingDate}-${i}`,
       ticker: p.symbol,
       company: p.companyName,
@@ -65,6 +65,7 @@ export default async function HomePage() {
       sparkline: [],
       timestamp: row.generated_at || new Date().toISOString(),
     }));
+    signals = ([...allSignals].sort((a, b) => b.conviction - a.conviction).slice(0, 10)) as Signal[];
   }
 
   const buyCount = signals.filter((s) => s.call === "BUY").length;
@@ -158,9 +159,20 @@ export default async function HomePage() {
           </div>
         </div>
 
-        <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
-          Today&apos;s calls
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
+            Today&apos;s calls
+          </h1>
+          <Link
+            href="/picks"
+            className="text-[12px] font-bold text-accent-brand"
+          >
+            View all &rsaquo;
+          </Link>
+        </div>
+        <p className="text-[11px] text-text-faint mt-0.5">
+          Top 10 by conviction &middot; Short &amp; long term picks on Daily Picks
+        </p>
 
         {/* Stats strip */}
         <div className="flex items-center gap-4 mt-3">

@@ -224,53 +224,73 @@ Below are REAL live prices and data for ${snapshots.length} US stocks.
 LIVE MARKET DATA:
 ${stockData}
 
-TASK: Select exactly 10 stocks for actionable same-day or short-term recommendations.
-Be creative and diverse — avoid defaulting to just mega-cap tech. Look across ALL sectors for the best risk/reward setups today.
+TASK: Select exactly 20 stocks — 10 SHORT-TERM picks and 10 LONG-TERM picks.
+Be creative and diverse — avoid defaulting to just mega-cap tech. Look across ALL sectors for the best risk/reward setups.
 
-CRITICAL RULES:
-1. Entry price MUST be within 1-3% of the CURRENT price shown above. Users should be able to act TODAY.
-2. For BUY: target 5-15% upside from entry over the timeframe. Stop loss 3-7% below entry.
-3. For SELL/SHORT: target 5-15% downside from entry. Stop loss 3-7% above entry.
-4. Risk:reward ratio must be at least 2:1
-5. Conviction 70+ means you are very confident based on the data
-6. DO NOT pick stocks that are already at 52-week highs unless they have strong analyst upgrades and momentum
-7. Favor stocks where analyst target price suggests meaningful upside/downside from current price
-8. MANDATORY: Pick from at least 6 different sectors. No more than 2 picks from the same sector.
-9. Include at least 3 mid-cap or smaller stocks (market cap under $50B) — not just mega-caps.
+SHORT-TERM PICKS (10 picks, timeframe: "short-term"):
+- Horizon: 1–4 weeks. Focus on momentum, swing trades, catalysts, earnings plays.
+- Entry price within 1-3% of current price.
+- BUY target: 5-15% upside. SELL target: 5-15% downside.
+- Stop loss: 3-7% from entry.
 
-Return a JSON array of exactly 10 objects:
+LONG-TERM PICKS (10 picks, timeframe: "long-term"):
+- Horizon: 1–6 months. Focus on fundamental value, sector tailwinds, analyst upgrades, macro themes.
+- Entry price within 1-5% of current price.
+- BUY target: 10-30% upside. SELL target: 10-25% downside.
+- Stop loss: 5-12% from entry.
+- Prioritize stocks where analyst consensus target is significantly above/below current price.
+
+CRITICAL RULES FOR ALL PICKS:
+1. Risk:reward ratio must be at least 2:1
+2. Conviction 70+ means you are very confident based on the data
+3. DO NOT pick stocks that are already at 52-week highs unless they have strong analyst upgrades
+4. Favor stocks where analyst target price suggests meaningful upside/downside
+5. MANDATORY: Across all 20 picks, use at least 8 different sectors. No more than 3 picks from the same sector.
+6. Include at least 5 mid-cap or smaller stocks (market cap under $50B) across all picks.
+7. NO duplicate symbols — each stock appears at most once.
+
+Return a JSON array of exactly 20 objects:
 - "symbol": ticker
 - "companyName": company name
 - "action": "BUY" or "SELL"
-- "entryPrice": price near current price (within 1-3%)
+- "entryPrice": price near current price
 - "targetPrice": realistic target based on analyst targets and technicals
 - "stopLoss": protective stop loss
-- "timeframe": "short-term" (1-4 weeks) or "long-term" (1-6 months)
+- "timeframe": "short-term" or "long-term"
 - "conviction": integer 50-95
 - "rationale": 2 sentences explaining WHY based on the real data above
 - "catalysts": array of 2-3 specific catalysts
 
-Include 7-8 BUY and 2-3 SELL. Return ONLY the JSON array.`;
+Include 14-16 BUY and 4-6 SELL across both timeframes. Return ONLY the JSON array.`;
 }
 
 function validatePicks(picks: Pick[], snapshots: StockSnapshot[]): Pick[] {
   const priceMap = new Map(snapshots.map(s => [s.symbol, s.price]));
+  const seen = new Set<string>();
 
   return picks.filter(p => {
+    if (seen.has(p.symbol)) return false;
+    seen.add(p.symbol);
+
     const realPrice = priceMap.get(p.symbol);
     if (!realPrice) return false;
 
+    const isLong = p.timeframe === "long-term";
+    const maxDrift = isLong ? 0.08 : 0.05;
+
     const entryDrift = Math.abs(p.entryPrice - realPrice) / realPrice;
-    if (entryDrift > 0.05) {
+    if (entryDrift > maxDrift) {
       p.entryPrice = realPrice;
     }
 
     if (p.action === "BUY") {
-      if (p.targetPrice <= p.entryPrice) p.targetPrice = p.entryPrice * 1.10;
-      if (p.stopLoss >= p.entryPrice) p.stopLoss = p.entryPrice * 0.95;
+      const minTarget = isLong ? 1.12 : 1.10;
+      if (p.targetPrice <= p.entryPrice) p.targetPrice = p.entryPrice * minTarget;
+      if (p.stopLoss >= p.entryPrice) p.stopLoss = p.entryPrice * (isLong ? 0.92 : 0.95);
     } else {
-      if (p.targetPrice >= p.entryPrice) p.targetPrice = p.entryPrice * 0.90;
-      if (p.stopLoss <= p.entryPrice) p.stopLoss = p.entryPrice * 1.05;
+      const maxTarget = isLong ? 0.88 : 0.90;
+      if (p.targetPrice >= p.entryPrice) p.targetPrice = p.entryPrice * maxTarget;
+      if (p.stopLoss <= p.entryPrice) p.stopLoss = p.entryPrice * (isLong ? 1.08 : 1.05);
     }
 
     p.currentPrice = realPrice;
