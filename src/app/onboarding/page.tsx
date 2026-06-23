@@ -46,12 +46,32 @@ const risks = [
 
 const capitalOptions = ["$5K", "$10K", "$25K", "$50K", "$100K"];
 
+const timezoneOptions = [
+  { id: "America/New_York", label: "US Eastern (ET)", offset: "UTC-5/4" },
+  { id: "America/Chicago", label: "US Central (CT)", offset: "UTC-6/5" },
+  { id: "America/Denver", label: "US Mountain (MT)", offset: "UTC-7/6" },
+  { id: "America/Los_Angeles", label: "US Pacific (PT)", offset: "UTC-8/7" },
+  { id: "Asia/Kolkata", label: "India (IST)", offset: "UTC+5:30" },
+  { id: "Europe/London", label: "UK (GMT/BST)", offset: "UTC+0/1" },
+  { id: "Europe/Berlin", label: "Central Europe (CET)", offset: "UTC+1/2" },
+  { id: "Asia/Tokyo", label: "Japan (JST)", offset: "UTC+9" },
+  { id: "Asia/Singapore", label: "Singapore (SGT)", offset: "UTC+8" },
+  { id: "Australia/Sydney", label: "Australia (AEST)", offset: "UTC+10/11" },
+  { id: "Asia/Dubai", label: "UAE (GST)", offset: "UTC+4" },
+];
+
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [goal, setGoal] = useState("");
   const [risk, setRisk] = useState("");
   const [capital, setCapital] = useState("");
+  const [timezone, setTimezone] = useState(() => {
+    if (typeof window !== "undefined") {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+    return "America/New_York";
+  });
   const [saving, setSaving] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
 
@@ -63,7 +83,7 @@ export default function OnboardingPage() {
 
       const { data: profile } = await supabase
         .from("user_profiles")
-        .select("goal, risk_tolerance, capital_range, onboarding_completed")
+        .select("goal, risk_tolerance, capital_range, timezone, onboarding_completed")
         .eq("id", user.id)
         .single();
 
@@ -72,6 +92,7 @@ export default function OnboardingPage() {
         if (profile.goal) setGoal(profile.goal);
         if (profile.risk_tolerance) setRisk(profile.risk_tolerance);
         if (profile.capital_range) setCapital(profile.capital_range);
+        if (profile.timezone) setTimezone(profile.timezone);
       }
     }
     loadExisting();
@@ -97,6 +118,7 @@ export default function OnboardingPage() {
           goal,
           risk_tolerance: risk,
           capital_range: capital,
+          timezone,
           onboarding_completed: true,
         });
 
@@ -208,23 +230,43 @@ export default function OnboardingPage() {
         {step === 2 && (
           <>
             <h1 className="text-[28px] font-extrabold tracking-[-0.6px] mb-6">
-              Starting capital
+              Capital &amp; timezone
             </h1>
-            <div className="flex flex-wrap gap-2 mb-8">
-              {capitalOptions.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setCapital(c)}
-                  className={cn(
-                    "font-mono text-[14px] font-medium px-4 py-2.5 rounded-[8px] border transition-colors",
-                    capital === c
-                      ? "border-accent-brand bg-accent-brand/10 text-accent-brand"
-                      : "border-border-1 bg-surface-2 text-text-secondary"
-                  )}
-                >
-                  {c}
-                </button>
-              ))}
+            <div className="mb-6">
+              <div className="text-[13px] text-text-muted mb-2 font-medium">Starting capital</div>
+              <div className="flex flex-wrap gap-2">
+                {capitalOptions.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setCapital(c)}
+                    className={cn(
+                      "font-mono text-[14px] font-medium px-4 py-2.5 rounded-[8px] border transition-colors",
+                      capital === c
+                        ? "border-accent-brand bg-accent-brand/10 text-accent-brand"
+                        : "border-border-1 bg-surface-2 text-text-secondary"
+                    )}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mb-8">
+              <div className="text-[13px] text-text-muted mb-2 font-medium">Your timezone</div>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full h-[48px] rounded-[12px] bg-surface-1 border border-border-1 px-4 text-[14px] text-text-primary outline-none focus:border-accent-brand transition-colors"
+              >
+                {timezoneOptions.map((tz) => (
+                  <option key={tz.id} value={tz.id}>
+                    {tz.label} ({tz.offset})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-text-faint mt-1.5">
+                Market hours and alert times will be shown in your timezone
+              </p>
             </div>
           </>
         )}

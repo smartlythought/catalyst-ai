@@ -191,11 +191,15 @@ export default function AccountPage() {
                 label: "Capital",
                 value: profile.capital_range || "—",
               },
+              {
+                label: "Timezone",
+                value: profile.timezone?.replace(/_/g, " ").replace(/\//g, " / ") || Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/_/g, " "),
+              },
             ].map((item, i) => (
               <div
                 key={item.label}
                 className={`flex items-center justify-between px-4 py-3.5 ${
-                  i < 2 ? "border-b border-border-hairline" : ""
+                  i < 3 ? "border-b border-border-hairline" : ""
                 }`}
               >
                 <span className="text-[14px] text-text-muted">
