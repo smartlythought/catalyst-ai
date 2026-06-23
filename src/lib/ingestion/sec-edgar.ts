@@ -203,15 +203,20 @@ export async function getCompanyFacts(cik: string) {
   return secFetch(`${SEC_BASE}/api/xbrl/companyfacts/CIK${paddedCik}.json`);
 }
 
+let _tickerMap: Map<string, string> | null = null;
+let _tickerMapExpiry = 0;
+
 /**
- * Resolve ticker to CIK
+ * Resolve ticker to CIK (cached for 24h)
  */
 export async function tickerToCik(ticker: string): Promise<string | null> {
-  const data = await secFetch("https://www.sec.gov/files/company_tickers.json");
-  for (const entry of Object.values(data) as { ticker: string; cik_str: string }[]) {
-    if (entry.ticker.toUpperCase() === ticker.toUpperCase()) {
-      return String(entry.cik_str);
+  if (!_tickerMap || Date.now() > _tickerMapExpiry) {
+    const data = await secFetch("https://www.sec.gov/files/company_tickers.json");
+    _tickerMap = new Map();
+    for (const entry of Object.values(data) as { ticker: string; cik_str: string }[]) {
+      _tickerMap.set(entry.ticker.toUpperCase(), String(entry.cik_str));
     }
+    _tickerMapExpiry = Date.now() + 86400_000;
   }
-  return null;
+  return _tickerMap.get(ticker.toUpperCase()) || null;
 }

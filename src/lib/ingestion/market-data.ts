@@ -292,13 +292,15 @@ export async function getHistoricalPrices(
   symbol: string,
   days = 90
 ): Promise<{ date: string; close: number; volume: number }[]> {
-  // Try FMP stable historical
+  // Try FMP stable historical, then v3 fallback
   if (FMP_KEY) {
-    try {
-      const res = await fetch(
-        `${FMP_STABLE}/historical-price-eod/full?symbol=${symbol}&apikey=${FMP_KEY}`
-      );
-      if (res.ok) {
+    for (const url of [
+      `${FMP_STABLE}/historical-price-eod/full?symbol=${symbol}&apikey=${FMP_KEY}`,
+      `https://financialmodelingprep.com/api/v3/historical-price-full/${symbol}?apikey=${FMP_KEY}`,
+    ]) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
         const data = await res.json();
         const hist = data?.historical || (Array.isArray(data) ? data : []);
         if (hist.length > 0) {
@@ -310,8 +312,8 @@ export async function getHistoricalPrices(
             })
           );
         }
-      }
-    } catch {}
+      } catch {}
+    }
   }
 
   // Fallback: Finnhub candles

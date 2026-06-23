@@ -29,28 +29,31 @@ export async function GET(
     return NextResponse.json({ error: "FMP not configured" }, { status: 500 });
   }
 
-  const [incomeRes, balanceRes, cashFlowRes] = await Promise.all([
-    fetch(
-      `https://financialmodelingprep.com/stable/income-statement?symbol=${symbol}&period=annual&limit=5&apikey=${FMP_KEY}`,
+  async function fetchFinancialSet(stableEndpoint: string, v3Endpoint: string) {
+    const stableRes = await fetch(
+      `https://financialmodelingprep.com/stable/${stableEndpoint}?symbol=${symbol}&period=annual&limit=5&apikey=${FMP_KEY}`,
       { next: { revalidate: 86400 } }
-    ).catch(() => null),
-    fetch(
-      `https://financialmodelingprep.com/stable/balance-sheet-statement?symbol=${symbol}&period=annual&limit=5&apikey=${FMP_KEY}`,
+    ).catch(() => null);
+    if (stableRes?.ok) {
+      const data = await stableRes.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+    const v3Res = await fetch(
+      `https://financialmodelingprep.com/api/v3/${v3Endpoint}/${symbol}?period=annual&limit=5&apikey=${FMP_KEY}`,
       { next: { revalidate: 86400 } }
-    ).catch(() => null),
-    fetch(
-      `https://financialmodelingprep.com/stable/cash-flow-statement?symbol=${symbol}&period=annual&limit=5&apikey=${FMP_KEY}`,
-      { next: { revalidate: 86400 } }
-    ).catch(() => null),
+    ).catch(() => null);
+    if (v3Res?.ok) {
+      const data = await v3Res.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+    return [];
+  }
+
+  const [incArr, balArr, cfArr] = await Promise.all([
+    fetchFinancialSet("income-statement", "income-statement"),
+    fetchFinancialSet("balance-sheet-statement", "balance-sheet-statement"),
+    fetchFinancialSet("cash-flow-statement", "cash-flow-statement"),
   ]);
-
-  const income = incomeRes?.ok ? await incomeRes.json() : [];
-  const balance = balanceRes?.ok ? await balanceRes.json() : [];
-  const cashFlow = cashFlowRes?.ok ? await cashFlowRes.json() : [];
-
-  const incArr = Array.isArray(income) ? income : [];
-  const balArr = Array.isArray(balance) ? balance : [];
-  const cfArr = Array.isArray(cashFlow) ? cashFlow : [];
 
   if (incArr.length === 0) {
     return NextResponse.json({ error: "No financial data available" }, { status: 404 });
