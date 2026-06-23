@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
+const FMP_KEY = process.env.FMP_API_KEY || "";
 
 const MARKET_UNIVERSE = [
   { symbol: "AAPL", name: "Apple Inc.", sector: "Technology" },
@@ -87,26 +88,92 @@ async function fetchMarketQuotes(): Promise<MarketQuote[]> {
   return results;
 }
 
+interface MoverItem {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+}
+
+/**
+ * Fetch real market-wide movers from FMP. These are the actual top gainers/
+ * losers/most-active across the whole US market — not limited to a curated
+ * list. `most-actives` is sorted by real trading volume.
+ * Tries the stable API first, falls back to v3.
+ */
+async function fetchFMPMovers(
+  kind: "gainers" | "losers" | "actives"
+): Promise<MoverItem[]> {
+  if (!FMP_KEY) return [];
+
+  const stablePath =
+    kind === "gainers"
+      ? "biggest-gainers"
+      : kind === "losers"
+        ? "biggest-losers"
+        : "most-actives";
+
+  const urls = [
+    `https://financialmodelingprep.com/stable/${stablePath}?apikey=${FMP_KEY}`,
+    `https://financialmodelingprep.com/api/v3/stock_market/${kind}?apikey=${FMP_KEY}`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { next: { revalidate: 120 } });
+      if (!res.ok) {
+        console.log(`[pulse] FMP ${kind} ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) continue;
+      return data
+        .map((d: any) => ({
+          symbol: d.symbol,
+          name: d.name || d.symbol,
+          price: d.price ?? 0,
+          change: d.change ?? 0,
+          changePercent:
+            typeof d.changesPercentage === "number"
+              ? d.changesPercentage
+              : parseFloat(String(d.changesPercentage || "0").replace(/[()%]/g, "")) || 0,
+        }))
+        .filter((d: MoverItem) => d.symbol && d.price > 0)
+        .slice(0, 10);
+    } catch (e) {
+      console.log(`[pulse] FMP ${kind} error:`, e);
+    }
+  }
+  return [];
+}
+
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const supabase = createServiceClient();
 
-  // Fetch live quotes once, share across consumers
-  const [callStats, liveQuotes] = await Promise.all([
-    getCallStats(supabase),
-    fetchMarketQuotes(),
-  ]);
+  // Real market-wide movers from FMP + curated universe quotes for sectors.
+  const [callStats, liveQuotes, fmpGainers, fmpLosers, fmpActives] =
+    await Promise.all([
+      getCallStats(supabase),
+      fetchMarketQuotes(),
+      fetchFMPMovers("gainers"),
+      fetchFMPMovers("losers"),
+      fetchFMPMovers("actives"),
+    ]);
 
-  const gainersLosers = getGainersLosers(liveQuotes);
+  // Fall back to universe-derived movers only if FMP returns nothing.
+  const fallback = getGainersLosers(liveQuotes);
   const sectorData = getSectorPerformance(liveQuotes);
 
   return NextResponse.json({
     callStats,
     sectors: sectorData,
-    gainers: gainersLosers.gainers,
-    losers: gainersLosers.losers,
-    mostActive: gainersLosers.mostActive,
+    gainers: fmpGainers.length > 0 ? fmpGainers.slice(0, 5) : fallback.gainers,
+    losers: fmpLosers.length > 0 ? fmpLosers.slice(0, 5) : fallback.losers,
+    mostActive:
+      fmpActives.length > 0 ? fmpActives.slice(0, 5) : fallback.mostActive,
     updatedAt: new Date().toISOString(),
   });
 }
