@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SignalsFeed } from "@/components/signals-feed";
+import { MarketIndices } from "@/components/market-indices";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
 import { getActiveCalls } from "@/lib/supabase/queries";
@@ -44,7 +45,11 @@ export default async function HomePage() {
             </span>
           </div>
         </div>
+      </header>
 
+      <MarketIndices />
+
+      <div className="px-5">
         {/* Search bar */}
         <Link
           href="/search"
@@ -95,7 +100,7 @@ export default async function HomePage() {
             {signals.length} stocks
           </div>
         </div>
-      </header>
+      </div>
 
       <SignalsFeed signals={signals} />
 

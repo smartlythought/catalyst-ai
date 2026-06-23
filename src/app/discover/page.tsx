@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
+import { MarketIndices } from "@/components/market-indices";
 import { Disclaimer } from "@/components/disclaimer";
 
 interface MarketItem {
@@ -88,6 +89,8 @@ export default function DiscoverPage() {
           Market overview and trends
         </p>
       </header>
+
+      <MarketIndices />
 
       {/* AI Call Stats */}
       {pulse?.callStats && pulse.callStats.total > 0 && (
