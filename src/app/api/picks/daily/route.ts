@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
+const FMP_KEY = process.env.FMP_API_KEY || "";
 
 interface Pick {
   symbol: string;
@@ -66,9 +67,35 @@ const SCAN_UNIVERSE = [
   "CVNA","DKNG","RBLX","PINS","SNAP","RDDT","APP","TTD","ZETA","CRNC",
 ];
 
+/** FMP batch-quote fallback for symbols Yahoo didn't return. */
+async function fetchFMPBatch(symbols: string[]): Promise<Map<string, any>> {
+  const map = new Map<string, any>();
+  if (!FMP_KEY || symbols.length === 0) return map;
+  for (let i = 0; i < symbols.length; i += 50) {
+    const batch = symbols.slice(i, i + 50);
+    try {
+      const res = await fetch(
+        `https://financialmodelingprep.com/stable/batch-quote?symbols=${batch.join(",")}&apikey=${FMP_KEY}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) {
+        console.log(`[picks] FMP batch ${i} status ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      for (const q of Array.isArray(data) ? data : []) {
+        if (q.symbol && q.price > 0) map.set(q.symbol, q);
+      }
+    } catch (e) {
+      console.log(`[picks] FMP batch ${i} error:`, e);
+    }
+  }
+  return map;
+}
+
 async function buildSnapshots(): Promise<StockSnapshot[]> {
-  // Yahoo batch quotes — free, keyless, fast, and broad (covers the small/mid
-  // caps that FMP/Finnhub free tiers drop). One pass over the deduped universe.
+  // Primary: Yahoo batch quotes — free, keyless, broad. But Yahoo can rate-
+  // limit datacenter IPs, so fall back to FMP batch-quote for anything missing.
   const symbols = Array.from(new Set(SCAN_UNIVERSE));
   const quotes = await yahooBatchQuotes(symbols);
 
@@ -94,7 +121,37 @@ async function buildSnapshots(): Promise<StockSnapshot[]> {
       targetMean: 0,
     });
   }
-  console.log(`[picks] Total snapshots (Yahoo): ${snapshots.length}/${symbols.length}`);
+  console.log(`[picks] Yahoo snapshots: ${snapshots.length}/${symbols.length}`);
+
+  // Yahoo came back thin (likely IP-blocked on this host) → backfill via FMP.
+  if (snapshots.length < 30) {
+    const have = new Set(snapshots.map((s) => s.symbol));
+    const missing = symbols.filter((s) => !have.has(s));
+    const fmp = await fetchFMPBatch(missing);
+    for (const sym of missing) {
+      const q = fmp.get(sym);
+      if (!q || !(q.price > 0)) continue;
+      snapshots.push({
+        symbol: sym,
+        name: q.name || sym,
+        price: q.price,
+        change: q.change ?? 0,
+        changePct: q.changesPercentage ?? q.changePercentage ?? 0,
+        pe: q.pe ?? 0,
+        marketCap: q.marketCap ?? 0,
+        sector: q.sector || "",
+        volume: q.volume ?? 0,
+        week52High: q.yearHigh ?? 0,
+        week52Low: q.yearLow ?? 0,
+        analystBuy: 0,
+        analystHold: 0,
+        analystSell: 0,
+        targetMean: 0,
+      });
+    }
+    console.log(`[picks] After FMP backfill: ${snapshots.length}/${symbols.length}`);
+  }
+
   return snapshots;
 }
 
@@ -295,7 +352,10 @@ export async function GET(request: Request) {
 
     if (snapshots.length < 10) {
       return NextResponse.json(
-        { error: "Insufficient market data — try again shortly" },
+        {
+          error: "Insufficient market data — try again shortly",
+          debug: { snapshots: snapshots.length },
+        },
         { status: 502 }
       );
     }
@@ -303,6 +363,7 @@ export async function GET(request: Request) {
     const phase = getMarketPhase();
     const stockData = buildStockData(snapshots);
 
+    let geminiErr = "";
     async function callGemini(prompt: string): Promise<Pick[]> {
       const models = GEMINI_MODELS;
       for (const model of models) {
@@ -317,18 +378,25 @@ export async function GET(request: Request) {
                 generationConfig: {
                   responseMimeType: "application/json",
                   temperature: 0.7,
+                  maxOutputTokens: 8192,
                 },
               }),
-              signal: AbortSignal.timeout(25000),
+              signal: AbortSignal.timeout(28000),
             }
           );
-          if (!res.ok) { console.log(`[picks] Gemini ${model} ${res.status}`); continue; }
+          if (!res.ok) {
+            geminiErr = `${model}:${res.status}`;
+            console.log(`[picks] Gemini ${model} ${res.status}`);
+            continue;
+          }
           const data = await res.json();
           const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!text) continue;
+          if (!text) { geminiErr = `${model}:empty`; continue; }
           const parsed = JSON.parse(text);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          geminiErr = `${model}:not-array-or-empty`;
         } catch (e) {
+          geminiErr = `${model}:${String(e).slice(0, 80)}`;
           console.log(`[picks] Gemini ${model} error:`, e);
           continue;
         }
@@ -349,7 +417,13 @@ export async function GET(request: Request) {
     const picks = [...shortPicks, ...longPicks];
 
     if (!picks.length) {
-      return NextResponse.json({ error: "Failed to generate picks" }, { status: 502 });
+      return NextResponse.json(
+        {
+          error: "Failed to generate picks",
+          debug: { snapshots: snapshots.length, geminiErr },
+        },
+        { status: 502 }
+      );
     }
 
     const validated = validatePicks(picks, snapshots);

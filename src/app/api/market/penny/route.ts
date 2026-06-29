@@ -36,7 +36,7 @@ export async function GET() {
 
   const prompt = `You are a US stock market analyst specializing in small-cap and micro-cap stocks with high growth potential. Today is ${today}.
 
-Identify 15 US-listed stocks priced under $20 that have strong fundamentals and high growth potential. Focus on:
+Identify 10 US-listed stocks priced under $20 that have strong fundamentals and high growth potential. Focus on:
 - Strong revenue growth (>20% YoY)
 - Improving margins or path to profitability
 - Innovative products/technology in growing markets
@@ -44,7 +44,7 @@ Identify 15 US-listed stocks priced under $20 that have strong fundamentals and 
 - Reasonable valuation for growth stage
 - Good management team
 
-Return a JSON array of 15 objects. Each must have:
+Return a JSON array of 10 objects. Each must have:
 - "symbol": US stock ticker (NYSE/NASDAQ listed, actively traded)
 - "companyName": full company name
 - "price": approximate current price (must be under $20)
@@ -61,6 +61,7 @@ Return ONLY the JSON array.`;
 
   const models = GEMINI_MODELS;
   let picks: PennyPick[] = [];
+  let lastErr = "";
 
   for (const model of models) {
     try {
@@ -74,26 +75,32 @@ Return ONLY the JSON array.`;
             generationConfig: {
               responseMimeType: "application/json",
               temperature: 0.5,
+              maxOutputTokens: 8192,
             },
           }),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(28000),
         }
       );
 
-      if (!res.ok) continue;
+      if (!res.ok) { lastErr = `${model}:${res.status}`; continue; }
       const data = await res.json();
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) continue;
+      if (!text) { lastErr = `${model}:empty`; continue; }
 
       picks = JSON.parse(text);
       if (Array.isArray(picks) && picks.length > 0) break;
-    } catch {
+      lastErr = `${model}:not-array`;
+    } catch (e) {
+      lastErr = `${model}:${String(e).slice(0, 80)}`;
       continue;
     }
   }
 
   if (!picks.length) {
-    return NextResponse.json({ error: "Failed to generate" }, { status: 502 });
+    return NextResponse.json(
+      { error: "Failed to generate", debug: lastErr, picks: [] },
+      { status: 502 }
+    );
   }
 
   if (FINNHUB_KEY) {
