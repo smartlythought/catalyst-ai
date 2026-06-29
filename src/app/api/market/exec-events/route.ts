@@ -75,7 +75,7 @@ async function fetchFinnhubEarnings(): Promise<ExecEvent[]> {
 
   try {
     const from = todayStr();
-    const to = futureStr(30);
+    const to = futureStr(21);
     const res = await fetch(
       `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${FINNHUB_KEY}`,
       { next: { revalidate: 3600 } }
@@ -86,8 +86,18 @@ async function fetchFinnhubEarnings(): Promise<ExecEvent[]> {
     const data = await res.json();
     const megaCapSet = new Set(MEGA_CAP_TICKERS);
 
+    // Show the whole upcoming calendar, not just 20 mega-caps. Sort soonest-
+    // first, and on a given day surface analyst-covered names (recognizable
+    // companies) ahead of obscure micro-caps. Cap so the payload stays sane.
     return (data.earningsCalendar || [])
-      .filter((e: any) => e.symbol && e.date && megaCapSet.has(e.symbol))
+      .filter((e: any) => e.symbol && e.date && !e.symbol.includes("."))
+      .sort((a: any, b: any) => {
+        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+        const ac = a.epsEstimate != null ? 0 : 1;
+        const bc = b.epsEstimate != null ? 0 : 1;
+        return ac - bc;
+      })
+      .slice(0, 40)
       .map((e: any) => ({
         company: MEGA_CAP_NAMES[e.symbol] || e.symbol,
         ticker: e.symbol,
@@ -103,7 +113,9 @@ async function fetchFinnhubEarnings(): Promise<ExecEvent[]> {
             ? ` Revenue estimate: $${formatRevenue(e.revenueEstimate)}.`
             : ""
         }`,
-        impact: "high" as const,
+        impact: (megaCapSet.has(e.symbol) ? "high" : "medium") as
+          | "high"
+          | "medium",
       }));
   } catch {
     return [];

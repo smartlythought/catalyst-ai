@@ -1,3 +1,5 @@
+import { yahooQuote, yahooHistorical } from "@/lib/ingestion/yahoo";
+
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 const FMP_KEY = process.env.FMP_API_KEY || "";
 
@@ -96,6 +98,23 @@ export async function getQuote(symbol: string): Promise<Quote | null> {
         timestamp: (q.timestamp || 0) * 1000,
       };
     } catch {}
+  }
+
+  // Final fallback: Yahoo (free, keyless, covers small caps Finnhub/FMP miss).
+  const yq = await yahooQuote(symbol);
+  if (yq) {
+    return {
+      symbol,
+      price: yq.price,
+      change: yq.change,
+      changePercent: yq.changePercent,
+      high: yq.dayHigh,
+      low: yq.dayLow,
+      open: yq.open,
+      previousClose: yq.previousClose,
+      volume: yq.volume,
+      timestamp: Date.now(),
+    };
   }
 
   return null;
@@ -238,6 +257,26 @@ export async function getCompanyProfile(
     } catch {}
   }
 
+  // Fallback: Yahoo (free, keyless) when neither FMP nor Finnhub returned one.
+  if (!profile) {
+    const yq = await yahooQuote(symbol);
+    if (yq) {
+      profile = {
+        symbol: yq.symbol,
+        name: yq.name,
+        exchange: "",
+        sector: "",
+        industry: "",
+        marketCap: yq.marketCap,
+        pe: yq.pe,
+        week52High: yq.week52High,
+        week52Low: yq.week52Low,
+        avgVolume: yq.volume,
+        description: "",
+      };
+    }
+  }
+
   // Enrich with basic financials if key fields are missing
   if (profile && (!profile.pe || !profile.avgVolume)) {
     try {
@@ -292,6 +331,14 @@ export async function getHistoricalPrices(
   symbol: string,
   days = 90
 ): Promise<{ date: string; close: number; volume: number }[]> {
+  // Yahoo first — free, keyless, broad coverage (incl. small caps), and far
+  // more reliable than the FMP/Finnhub free tiers that kept returning nothing.
+  const yh = await yahooHistorical(symbol, days);
+  if (yh.length > 0) {
+    console.log(`[prices] ${symbol} Yahoo OK: ${yh.length} points`);
+    return yh.slice(0, days);
+  }
+
   if (FMP_KEY) {
     const urls = [
       `${FMP_STABLE}/historical-price-eod/full?symbol=${symbol}&apikey=${FMP_KEY}`,

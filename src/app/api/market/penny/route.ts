@@ -3,6 +3,7 @@ import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
@@ -75,6 +76,7 @@ Return ONLY the JSON array.`;
               temperature: 0.5,
             },
           }),
+          signal: AbortSignal.timeout(25000),
         }
       );
 

@@ -3,12 +3,12 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { sendDailyPicksDigest } from "@/lib/email";
 import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
+import { yahooBatchQuotes } from "@/lib/ingestion/yahoo";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
-const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
-const FMP_KEY = process.env.FMP_API_KEY || "";
 
 interface Pick {
   symbol: string;
@@ -55,148 +55,46 @@ const SCAN_UNIVERSE = [
   "PLTR","SNOW","CRWD","NET","DDOG","ZS","PANW","FTNT","MDB","COIN",
   "SQ","SHOP","MELI","SE","UBER","LYFT","DASH","ABNB","RBLX","U",
   "ARM","SMCI","DELL","HPE","IBM","NOW","WDAY","TEAM","HUBS","VEEV",
+  // Growth / small & mid-caps — broadens beyond mega-caps so picks aren't all
+  // the same household names. Includes high-interest momentum & space/defense/
+  // quantum/semi names.
+  "RKLB","ASTS","LUNR","RDW","KTOS","AVAV","ACHR","JOBY","BBAI","SOUN",
+  "QUBT","QBTS","RGTI","IONQ","NVTS","INDI","CRDO","ALAB","NBIS","RKLB",
+  "FN","COHR","LITE","AMBA","SITM","POWI","MPWR","ON","WOLF","ALGM",
+  "AFRM","SOFI","UPST","HOOD","NU","TOST","BILL","GTLB","S","FROG",
+  "OKLO","SMR","CEG","VST","TLN","GEV","FSLR","ENPH","RUN","NEE",
+  "CVNA","DKNG","RBLX","PINS","SNAP","RDDT","APP","TTD","ZETA","CRNC",
 ];
 
-async function fetchFMPBatchQuotes(): Promise<Map<string, any>> {
-  const map = new Map();
-  if (!FMP_KEY) { console.log("[picks] No FMP key"); return map; }
-
-  for (let i = 0; i < SCAN_UNIVERSE.length; i += 30) {
-    const batch = SCAN_UNIVERSE.slice(i, i + 30);
-    try {
-      const res = await fetch(
-        `https://financialmodelingprep.com/stable/batch-quote?symbols=${batch.join(",")}&apikey=${FMP_KEY}`,
-        { cache: "no-store" }
-      );
-      if (!res.ok) {
-        console.log(`[picks] FMP batch ${i}-${i+30} status: ${res.status}`);
-        continue;
-      }
-      const data = await res.json();
-      const arr = Array.isArray(data) ? data : [];
-      for (const q of arr) {
-        if (q.symbol && q.price > 0) map.set(q.symbol, q);
-      }
-      console.log(`[picks] FMP batch ${i}-${i+30}: got ${arr.length} quotes, total ${map.size}`);
-    } catch (e) {
-      console.log(`[picks] FMP batch ${i}-${i+30} error:`, e);
-    }
-  }
-  return map;
-}
-
-async function fetchFinnhubQuote(symbol: string): Promise<any> {
-  if (!FINNHUB_KEY) return null;
-  try {
-    const res = await fetch(
-      `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`,
-      { next: { revalidate: 300 } }
-    );
-    const d = await res.json();
-    return d.c > 0 ? d : null;
-  } catch { return null; }
-}
-
-async function fetchAnalystData(symbols: string[]): Promise<Map<string, any>> {
-  const map = new Map();
-  if (!FINNHUB_KEY) return map;
-
-  for (let i = 0; i < symbols.length; i += 5) {
-    const batch = symbols.slice(i, i + 5);
-    const results = await Promise.all(batch.map(async (sym) => {
-      try {
-        const [rec, pt] = await Promise.all([
-          fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${sym}&token=${FINNHUB_KEY}`)
-            .then(r => r.json()).catch(() => []),
-          fetch(`https://finnhub.io/api/v1/stock/price-target?symbol=${sym}&token=${FINNHUB_KEY}`)
-            .then(r => r.json()).catch(() => ({})),
-        ]);
-        return {
-          symbol: sym,
-          buy: rec[0]?.buy || 0,
-          hold: rec[0]?.hold || 0,
-          sell: rec[0]?.sell || 0,
-          targetMean: pt.targetMean || 0,
-        };
-      } catch { return null; }
-    }));
-    for (const r of results) {
-      if (r) map.set(r.symbol, r);
-    }
-    if (i + 5 < symbols.length) await new Promise(r => setTimeout(r, 250));
-  }
-  return map;
-}
-
 async function buildSnapshots(): Promise<StockSnapshot[]> {
-  const fmpQuotes = await fetchFMPBatchQuotes();
+  // Yahoo batch quotes — free, keyless, fast, and broad (covers the small/mid
+  // caps that FMP/Finnhub free tiers drop). One pass over the deduped universe.
+  const symbols = Array.from(new Set(SCAN_UNIVERSE));
+  const quotes = await yahooBatchQuotes(symbols);
+
   const snapshots: StockSnapshot[] = [];
-
-  for (const sym of SCAN_UNIVERSE) {
-    const fmp = fmpQuotes.get(sym);
-    if (fmp && fmp.price > 0) {
-      snapshots.push({
-        symbol: sym,
-        name: fmp.name || sym,
-        price: fmp.price,
-        change: fmp.change ?? 0,
-        changePct: fmp.changesPercentage ?? fmp.changePercentage ?? 0,
-        pe: fmp.pe ?? 0,
-        marketCap: fmp.marketCap ?? 0,
-        sector: fmp.sector || "",
-        volume: fmp.volume ?? 0,
-        week52High: fmp.yearHigh ?? 0,
-        week52Low: fmp.yearLow ?? 0,
-        analystBuy: 0, analystHold: 0, analystSell: 0, targetMean: 0,
-      });
-    }
+  for (const sym of symbols) {
+    const q = quotes.get(sym);
+    if (!q || !(q.price > 0)) continue;
+    snapshots.push({
+      symbol: sym,
+      name: q.name || sym,
+      price: q.price,
+      change: q.change,
+      changePct: q.changePercent,
+      pe: q.pe,
+      marketCap: q.marketCap,
+      sector: "",
+      volume: q.volume,
+      week52High: q.week52High,
+      week52Low: q.week52Low,
+      analystBuy: 0,
+      analystHold: 0,
+      analystSell: 0,
+      targetMean: 0,
+    });
   }
-
-  if (snapshots.length < 40 && FINNHUB_KEY) {
-    const needed = SCAN_UNIVERSE.filter(s => !fmpQuotes.has(s)).slice(0, 60);
-    console.log(`[picks] Finnhub fallback for ${needed.length} symbols`);
-    for (let i = 0; i < needed.length; i += 5) {
-      const batch = needed.slice(i, i + 5);
-      const results = await Promise.all(batch.map(async (sym) => {
-        const q = await fetchFinnhubQuote(sym);
-        return q ? { sym, q } : null;
-      }));
-      for (const r of results) {
-        if (r) {
-          snapshots.push({
-            symbol: r.sym,
-            name: r.sym,
-            price: r.q.c,
-            change: r.q.d ?? 0,
-            changePct: r.q.dp ?? 0,
-            pe: 0, marketCap: 0, sector: "", volume: 0,
-            week52High: r.q.h ?? 0, week52Low: r.q.l ?? 0,
-            analystBuy: 0, analystHold: 0, analystSell: 0, targetMean: 0,
-          });
-        }
-      }
-      if (snapshots.length >= 40) break;
-      if (i + 5 < needed.length) await new Promise(r => setTimeout(r, 200));
-    }
-  }
-  console.log(`[picks] Total snapshots: ${snapshots.length}`);
-
-  const topMovers = [...snapshots]
-    .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
-    .slice(0, 40)
-    .map(s => s.symbol);
-
-  const analystData = await fetchAnalystData(topMovers);
-  for (const snap of snapshots) {
-    const ad = analystData.get(snap.symbol);
-    if (ad) {
-      snap.analystBuy = ad.buy;
-      snap.analystHold = ad.hold;
-      snap.analystSell = ad.sell;
-      snap.targetMean = ad.targetMean;
-    }
-  }
-
+  console.log(`[picks] Total snapshots (Yahoo): ${snapshots.length}/${symbols.length}`);
   return snapshots;
 }
 
