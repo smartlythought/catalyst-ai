@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { GEMINI_MODELS } from "@/lib/ai/models";
-import { withinDailyAIBudget } from "@/lib/ai/usage";
 
 export const revalidate = 3600;
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 
 interface IPO {
   name: string;
@@ -69,83 +66,54 @@ async function fetchFinnhubIPOs(): Promise<IPO[]> {
   }
 }
 
-async function analyzeIPOs(ipos: IPO[]): Promise<IPO[]> {
-  // Skip AI enrichment when unconfigured, empty, or over the daily budget —
-  // the IPO list itself still returns, just without AI ratings.
-  if (!GEMINI_KEY || ipos.length === 0 || !(await withinDailyAIBudget())) {
-    return ipos;
-  }
+/** Midpoint of a "$11.25 – $13.25" / "$12" style price range, or 0. */
+function priceMidpoint(range: string): number {
+  const nums = (range.match(/[\d.]+/g) || []).map(Number).filter((n) => n > 0);
+  if (nums.length === 0) return 0;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
 
-  const top = ipos.slice(0, 15);
-  const prompt = `You are an IPO analyst. Analyze these upcoming IPOs and provide a brief assessment for each.
+/**
+ * Deterministic, rule-based IPO scoring — no AI/Gemini calls. Strength is
+ * inferred from the offer price (proxy for size/quality) and listing venue;
+ * the insight is templated from the same signals. Keeps the page useful and
+ * costs zero API quota.
+ */
+function scoreIPOs(ipos: IPO[]): IPO[] {
+  const majorExchange = (ex: string) =>
+    /nasdaq|nyse/i.test(ex || "");
 
-IPOs:
-${top.map((ipo, i) => `${i + 1}. ${ipo.name} (${ipo.symbol}) - ${ipo.industry} - Price: ${ipo.priceRange} - Date: ${ipo.date}`).join("\n")}
+  return ipos.map((ipo) => {
+    const mid = priceMidpoint(ipo.priceRange);
+    const major = majorExchange(ipo.exchange);
 
-For each IPO, return a JSON array of objects with:
-- "symbol": the ticker symbol
-- "analysis": one sentence assessment (max 100 chars) about the IPO's potential
-- "rating": "strong" (high potential), "moderate" (decent), "weak" (risky), or "avoid"
+    let rating: IPO["aiRating"];
+    if (mid >= 20 && major) rating = "strong";
+    else if (mid >= 12) rating = "moderate";
+    else if (mid > 0) rating = "weak";
+    else rating = "moderate";
 
-Consider: industry trends, market conditions, company size, pricing, and sector momentum.
-Return ONLY the JSON array.`;
+    const venue = major ? ipo.exchange : "a smaller venue";
+    const sizeNote =
+      mid >= 20
+        ? "a higher offer price suggests an established, larger-cap debut"
+        : mid >= 12
+          ? "a mid-range offer price points to a moderate-size listing"
+          : mid > 0
+            ? "a low offer price suggests a smaller-cap, more speculative debut"
+            : "pricing is still to be determined";
 
-  const models = GEMINI_MODELS;
+    const aiAnalysis = `Listing on ${venue}; ${sizeNote}. Rule-based read — do your own research before the open.`;
 
-  for (const model of models) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.3,
-            },
-          }),
-          next: { revalidate: 3600 },
-        }
-      );
-
-      if (!res.ok) continue;
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) continue;
-
-      const analyses: { symbol: string; analysis: string; rating: string }[] =
-        JSON.parse(text);
-
-      const analysisMap = new Map(analyses.map((a) => [a.symbol, a]));
-
-      return ipos.map((ipo) => {
-        const a = analysisMap.get(ipo.symbol);
-        if (a) {
-          return {
-            ...ipo,
-            aiAnalysis: a.analysis,
-            aiRating: (["strong", "moderate", "weak", "avoid"].includes(a.rating)
-              ? a.rating
-              : "moderate") as IPO["aiRating"],
-          };
-        }
-        return ipo;
-      });
-    } catch {
-      continue;
-    }
-  }
-
-  return ipos;
+    return { ...ipo, aiRating: rating, aiAnalysis };
+  });
 }
 
 export async function GET() {
   const ipos = await fetchFinnhubIPOs();
-  const analyzed = await analyzeIPOs(ipos);
+  const scored = scoreIPOs(ipos);
 
-  const sorted = analyzed.sort(
+  const sorted = scored.sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 

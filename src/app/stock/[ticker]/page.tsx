@@ -7,6 +7,7 @@ import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
 import { FinancialsChart } from "@/components/financials-chart";
 import { useRealtimePrice } from "@/hooks/use-realtime-price";
+import { USER_AI_ENABLED } from "@/lib/ai/config";
 
 interface NewsItem {
   title: string;
@@ -904,20 +905,22 @@ export default function StockDeepDivePage({
 
       {/* Action buttons */}
       <div className="px-5 mb-5 flex gap-2">
-        <Link
-          href={`/chat?ticker=${ticker.toUpperCase()}`}
-          className="flex-1 h-[48px] rounded-[14px] bg-accent-brand text-white font-bold text-[14px] flex items-center justify-center gap-2"
-        >
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-            <path
-              d="M4 4H16V13H8L4 16V4Z"
-              stroke="white"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-            />
-          </svg>
-          Ask AI
-        </Link>
+        {USER_AI_ENABLED && (
+          <Link
+            href={`/chat?ticker=${ticker.toUpperCase()}`}
+            className="flex-1 h-[48px] rounded-[14px] bg-accent-brand text-white font-bold text-[14px] flex items-center justify-center gap-2"
+          >
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+              <path
+                d="M4 4H16V13H8L4 16V4Z"
+                stroke="white"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Ask AI
+          </Link>
+        )}
         <Link
           href={`/ecosystem/${ticker.toUpperCase()}`}
           className="h-[48px] px-4 rounded-[14px] border border-border-1 bg-surface-1 font-bold text-[13px] text-text-secondary flex items-center justify-center gap-1.5"

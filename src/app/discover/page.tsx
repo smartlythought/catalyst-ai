@@ -58,6 +58,7 @@ export default function DiscoverPage() {
   const router = useRouter();
   const [pulse, setPulse] = useState<PulseData | null>(null);
   const [earnings, setEarnings] = useState<Earning[]>([]);
+  const [majorEarnings, setMajorEarnings] = useState<Earning[]>([]);
   const [tab, setTab] = useState<"gainers" | "losers" | "active">("gainers");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -73,6 +74,7 @@ export default function DiscoverPage() {
       .then(([p, e]) => {
         setPulse(p);
         setEarnings(e.earnings || []);
+        setMajorEarnings(e.major || []);
         setLastUpdated(p.updatedAt || new Date().toISOString());
       })
       .catch(() => {})
@@ -489,11 +491,64 @@ export default function DiscoverPage() {
         </div>
       </div>
 
+      {/* Major Companies earnings — dedicated section for mega/large caps */}
+      {majorEarnings.length > 0 && (
+        <div className="px-5 mb-5">
+          <h2 className="font-mono text-[10px] text-accent-brand uppercase tracking-[1px] mb-3">
+            Major Companies · Upcoming Earnings
+          </h2>
+          <div className="bg-surface-1 border border-accent-brand/20 rounded-[18px] overflow-hidden">
+            {majorEarnings.slice(0, 12).map((e, i) => (
+              <Link
+                key={`major-${e.symbol}-${e.date}`}
+                href={`/stock/${e.symbol}`}
+                className={`flex items-center gap-3 px-4 py-3 ${
+                  i < Math.min(majorEarnings.length, 12) - 1
+                    ? "border-b border-border-hairline"
+                    : ""
+                }`}
+              >
+                <div className="w-[36px] h-[36px] rounded-[10px] bg-accent-brand/10 border border-accent-brand/20 flex flex-col items-center justify-center">
+                  <div className="text-[9px] text-accent-brand font-mono leading-none">
+                    {new Date(e.date + "T00:00:00").toLocaleDateString("en", {
+                      month: "short",
+                    })}
+                  </div>
+                  <div className="text-[14px] font-bold leading-none text-accent-brand">
+                    {new Date(e.date + "T00:00:00").getDate()}
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="font-mono text-[14px] font-bold">
+                    {e.symbol}
+                  </div>
+                  <div className="text-[11px] text-text-muted">
+                    {e.time === "bmo"
+                      ? "Before market open"
+                      : e.time === "amc"
+                        ? "After market close"
+                        : e.time || "TBD"}
+                  </div>
+                </div>
+                {e.epsEstimate != null && (
+                  <div className="text-right">
+                    <div className="text-[10px] text-text-faint">EPS Est.</div>
+                    <div className="font-mono text-[13px] font-bold">
+                      ${e.epsEstimate.toFixed(2)}
+                    </div>
+                  </div>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Earnings Calendar */}
       {earnings.length > 0 && (
         <div className="px-5 mb-5">
           <h2 className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-3">
-            Upcoming Earnings
+            All Upcoming Earnings
           </h2>
           <div className="bg-surface-1 border border-border-1 rounded-[18px] overflow-hidden">
             {earnings.slice(0, 10).map((e, i) => (

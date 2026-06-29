@@ -14,6 +14,28 @@ interface EarningsEntry {
   revenueActual?: number | null;
 }
 
+// Well-known large/mega-caps for the dedicated "Major Companies" section.
+const MAJOR_TICKERS = new Set([
+  "AAPL","MSFT","NVDA","GOOGL","GOOG","AMZN","META","TSLA","AVGO","AMD",
+  "JPM","V","MA","BAC","WFC","GS","UNH","JNJ","LLY","PFE","MRK","ABBV",
+  "XOM","CVX","WMT","COST","HD","PG","KO","PEP","MCD","NKE","DIS","NFLX",
+  "ORCL","CRM","ADBE","INTC","QCOM","CSCO","TXN","IBM","NOW","PLTR","UBER",
+  "BA","CAT","GE","HON","RTX","T","VZ","TMUS","C","MS","BLK","INTU","AMAT",
+]);
+
+function majorEarnings(list: EarningsEntry[], from: string): EarningsEntry[] {
+  return list
+    .filter((e) => e.symbol && e.date && e.date >= from && MAJOR_TICKERS.has(e.symbol))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    .slice(0, 15);
+}
+
+function widePlus(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
 /**
  * Keep only entries within [from, to], sort SOONEST-FIRST, then cap. The
  * upstream feeds return results newest-first, so slicing before sorting drops
@@ -41,12 +63,15 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from") || todayStr();
   const to = searchParams.get("to") || nextWeekStr();
+  // Fetch a wider window than the near-term list so the "Major Companies"
+  // section can surface the next mega-cap reports even if they're weeks out.
+  const wideTo = widePlus(60);
 
   // Try Finnhub earnings calendar first
   if (FINNHUB_KEY) {
     try {
       const res = await fetch(
-        `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${FINNHUB_KEY}`
+        `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${wideTo}&token=${FINNHUB_KEY}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -62,8 +87,9 @@ export async function GET(request: NextRequest) {
           })
         );
         const earnings = prepEarnings(mapped, from, to);
-        if (earnings.length > 0) {
-          return NextResponse.json({ earnings });
+        const major = majorEarnings(mapped, from);
+        if (earnings.length > 0 || major.length > 0) {
+          return NextResponse.json({ earnings, major });
         }
       }
     } catch {}
@@ -73,7 +99,7 @@ export async function GET(request: NextRequest) {
   if (FMP_KEY) {
     try {
       const res = await fetch(
-        `${FMP_STABLE}/earning-calendar?from=${from}&to=${to}&apikey=${FMP_KEY}`
+        `${FMP_STABLE}/earning-calendar?from=${from}&to=${wideTo}&apikey=${FMP_KEY}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -84,12 +110,15 @@ export async function GET(request: NextRequest) {
           epsEstimate: e.epsEstimated,
           revenueEstimate: e.revenueEstimated,
         }));
-        return NextResponse.json({ earnings: prepEarnings(mapped, from, to) });
+        return NextResponse.json({
+          earnings: prepEarnings(mapped, from, to),
+          major: majorEarnings(mapped, from),
+        });
       }
     } catch {}
   }
 
-  return NextResponse.json({ earnings: [] });
+  return NextResponse.json({ earnings: [], major: [] });
 }
 
 function todayStr() {

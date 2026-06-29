@@ -200,7 +200,21 @@ export default async function HomePage() {
         </div>
       </div>
 
-      <SignalsFeed signals={signals} />
+      {signals.length > 0 ? (
+        <SignalsFeed signals={signals} />
+      ) : (
+        <div className="px-5 mt-4">
+          <div className="bg-surface-1 border border-border-1 rounded-[18px] p-6 text-center">
+            <div className="text-[14px] text-text-muted mb-1">
+              Today&apos;s picks aren&apos;t ready yet
+            </div>
+            <div className="text-[12px] text-text-faint">
+              AI picks generate each trading day. Meanwhile, explore market
+              movers and earnings in Discover.
+            </div>
+          </div>
+        </div>
+      )}
 
       <Disclaimer />
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
+import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
 
 interface HoldingInput {
   ticker: string;
@@ -24,6 +25,10 @@ interface AdviceResponse {
 }
 
 export async function POST(request: NextRequest) {
+  if (!USER_AI_ENABLED) {
+    return NextResponse.json({ error: USER_AI_DISABLED_MESSAGE }, { status: 503 });
+  }
+
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
   if (!GEMINI_KEY) {

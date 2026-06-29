@@ -6,6 +6,7 @@ import { getCompanyNews } from "@/lib/ingestion/news";
 import { runResearchAgent } from "@/lib/ai/agent";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
+import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -73,6 +74,10 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!USER_AI_ENABLED) {
+    return NextResponse.json({ error: USER_AI_DISABLED_MESSAGE }, { status: 503 });
   }
 
   const { message, ticker, mode, history } = await request.json();

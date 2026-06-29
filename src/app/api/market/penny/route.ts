@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
+import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -24,6 +25,13 @@ interface PennyPick {
 }
 
 export async function GET() {
+  if (!USER_AI_ENABLED) {
+    return NextResponse.json(
+      { error: USER_AI_DISABLED_MESSAGE, picks: [] },
+      { status: 503 }
+    );
+  }
+
   if (!GEMINI_KEY) {
     return NextResponse.json({ error: "AI not configured" }, { status: 500 });
   }

@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { USER_AI_ENABLED } from "@/lib/ai/config";
 
-const tabs = [
+const allTabs = [
   {
     name: "Signals",
     href: "/",
@@ -81,6 +82,11 @@ const tabs = [
     ),
   },
 ];
+
+// Hide the AI Chat tab when user-facing AI is disabled (quota conservation).
+const tabs = USER_AI_ENABLED
+  ? allTabs
+  : allTabs.filter((t) => t.href !== "/chat");
 
 export function TabBar() {
   const pathname = usePathname();

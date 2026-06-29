@@ -7,6 +7,7 @@
  */
 
 import { GEMINI_MODELS } from "@/lib/ai/models";
+import { USER_AI_ENABLED } from "@/lib/ai/config";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const SEC_USER_AGENT = process.env.SEC_EDGAR_USER_AGENT || "Catalyst research@catalyst.claudeo.ai";
@@ -287,6 +288,9 @@ export async function getEcosystemMap(ticker: string): Promise<EcosystemMap> {
  * Returns 10-20 relationships with suppliers, customers, partners, and competitors.
  */
 async function generateEcosystemWithAI(symbol: string): Promise<EcosystemEdge[]> {
+  // User-AI disabled to conserve quota → no on-demand Gemini ecosystem gen.
+  // Curated (mega-cap) ecosystems still work; others simply return empty.
+  if (!USER_AI_ENABLED) return [];
   if (!GEMINI_KEY) return [];
 
   const prompt = `You are a financial analyst. For the publicly traded company with ticker "${symbol}", identify its key business ecosystem relationships.
