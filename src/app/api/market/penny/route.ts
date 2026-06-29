@@ -84,6 +84,8 @@ Return ONLY the JSON array.`;
               responseMimeType: "application/json",
               temperature: 0.5,
               maxOutputTokens: 8192,
+              // Disable 2.5-flash "thinking" to keep latency under the timeout.
+              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
           signal: AbortSignal.timeout(28000),

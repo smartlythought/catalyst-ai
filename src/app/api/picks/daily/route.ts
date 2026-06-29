@@ -379,6 +379,9 @@ export async function GET(request: Request) {
                   responseMimeType: "application/json",
                   temperature: 0.7,
                   maxOutputTokens: 8192,
+                  // Disable 2.5-flash "thinking" — it balloons latency on a
+                  // large prompt and was timing out the picks generation.
+                  thinkingConfig: { thinkingBudget: 0 },
                 },
               }),
               signal: AbortSignal.timeout(28000),
