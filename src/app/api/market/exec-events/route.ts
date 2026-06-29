@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { yahooBatchQuotes } from "@/lib/ingestion/yahoo";
+import { marketCapTier, SMALL_CAP, fmtCap } from "@/lib/market-cap";
 
 export const revalidate = 3600; // ISR: revalidate hourly
 export const maxDuration = 60;
@@ -72,13 +73,15 @@ function futureStr(days: number): string {
   return d.toISOString().split("T")[0];
 }
 
-// Minimum market cap to be worth showing — cuts micro-cap noise.
-const MIN_MARKET_CAP = 700_000_000; // $700M
+// Floor at the industry-standard small-cap threshold ($300M) — excludes
+// micro/nano-cap noise without any hardcoded ticker list.
+const MIN_MARKET_CAP = SMALL_CAP;
 
 function impactForMarketCap(mcap: number): "high" | "medium" | "low" {
-  if (mcap >= 10_000_000_000) return "high"; // $10B+
-  if (mcap >= 2_000_000_000) return "medium"; // $2B–10B
-  return "low"; // $700M–2B
+  const tier = marketCapTier(mcap);
+  if (tier === "mega" || tier === "large") return "high"; // >= $10B
+  if (tier === "mid") return "medium"; // $2B–10B
+  return "low"; // small-cap $300M–2B
 }
 
 async function fetchFinnhubEarnings(): Promise<ExecEvent[]> {
@@ -117,12 +120,7 @@ async function fetchFinnhubEarnings(): Promise<ExecEvent[]> {
         const mcap = q?.marketCap || 0;
         if (mcap < MIN_MARKET_CAP) return null;
         const name = q?.name || MEGA_CAP_NAMES[e.symbol] || e.symbol;
-        const capLabel =
-          mcap >= 1e12
-            ? `$${(mcap / 1e12).toFixed(1)}T`
-            : mcap >= 1e9
-              ? `$${(mcap / 1e9).toFixed(1)}B`
-              : `$${(mcap / 1e6).toFixed(0)}M`;
+        const capLabel = fmtCap(mcap);
         return {
           company: name,
           ticker: e.symbol,

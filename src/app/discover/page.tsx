@@ -26,6 +26,9 @@ interface Earning {
   time: string;
   epsEstimate: number | null;
   revenueEstimate: number | null;
+  name?: string;
+  capLabel?: string;
+  tierLabel?: string;
 }
 
 interface PulseData {
@@ -518,15 +521,21 @@ export default function DiscoverPage() {
                     {new Date(e.date + "T00:00:00").getDate()}
                   </div>
                 </div>
-                <div className="flex-1">
-                  <div className="font-mono text-[14px] font-bold">
-                    {e.symbol}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[14px] font-bold">{e.symbol}</span>
+                    {e.capLabel && (
+                      <span className="font-mono text-[9px] text-text-faint px-1.5 py-0.5 rounded bg-chip-bg border border-chip-border">
+                        {e.capLabel}
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[11px] text-text-muted">
+                  <div className="text-[11px] text-text-muted truncate">
+                    {e.name ? `${e.name} · ` : ""}
                     {e.time === "bmo"
-                      ? "Before market open"
+                      ? "Before open"
                       : e.time === "amc"
-                        ? "After market close"
+                        ? "After close"
                         : e.time || "TBD"}
                   </div>
                 </div>
@@ -571,15 +580,21 @@ export default function DiscoverPage() {
                     {new Date(e.date + "T00:00:00").getDate()}
                   </div>
                 </div>
-                <div className="flex-1">
-                  <div className="font-mono text-[14px] font-bold">
-                    {e.symbol}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[14px] font-bold">{e.symbol}</span>
+                    {e.capLabel && (
+                      <span className="font-mono text-[9px] text-text-faint px-1.5 py-0.5 rounded bg-chip-bg border border-chip-border">
+                        {e.capLabel}
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[11px] text-text-muted">
+                  <div className="text-[11px] text-text-muted truncate">
+                    {e.name ? `${e.name} · ` : ""}
                     {e.time === "bmo"
-                      ? "Before market open"
+                      ? "Before open"
                       : e.time === "amc"
-                        ? "After market close"
+                        ? "After close"
                         : e.time || "TBD"}
                   </div>
                 </div>
