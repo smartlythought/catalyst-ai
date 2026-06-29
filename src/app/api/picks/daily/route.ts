@@ -407,7 +407,8 @@ export async function GET(request: Request) {
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: {
                   responseMimeType: "application/json",
-                  temperature: 0.7,
+                  // Lower temperature → more consistent, less drift between runs.
+                  temperature: 0.35,
                   maxOutputTokens: 8192,
                   // Disable 2.5-flash "thinking" — it balloons latency on a
                   // large prompt and was timing out the picks generation.

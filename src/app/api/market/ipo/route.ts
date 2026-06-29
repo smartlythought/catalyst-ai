@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 import { withinDailyAIBudget } from "@/lib/ai/usage";
-import { saveAISnapshot } from "@/lib/ai/history";
+import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
@@ -141,8 +141,11 @@ Consider sector trends, size, pricing, and market conditions.`;
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.3,
+          // temperature 0 → deterministic: the same IPO data yields the same
+          // rating every run, so the strength badge doesn't flip between views.
+          temperature: 0,
           maxOutputTokens: 2048,
+          thinkingConfig: { thinkingBudget: 0 },
         },
       });
       if (!res?.ok) continue;
@@ -171,6 +174,19 @@ Consider sector trends, size, pricing, and market conditions.`;
 }
 
 export async function GET() {
+  // Pin per day: if today's IPO snapshot exists, return it unchanged so ratings
+  // stay stable all day across views (no flip-flopping). It regenerates only
+  // once per day on the first request.
+  const cached = await getTodayAISnapshot("ipo");
+  if (Array.isArray(cached) && cached.length > 0) {
+    return NextResponse.json({
+      ipos: cached,
+      total: cached.length,
+      cached: true,
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
   const ipos = await fetchFinnhubIPOs();
   const scored = await enrichWithAI(scoreIPOs(ipos));
 
