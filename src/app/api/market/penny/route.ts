@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
-import { saveAISnapshot } from "@/lib/ai/history";
+import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -35,6 +35,19 @@ export async function GET() {
 
   if (!GEMINI_KEY) {
     return NextResponse.json({ error: "AI not configured" }, { status: 500 });
+  }
+
+  // Serve today's cached snapshot if we already generated it — high-yield only
+  // needs to run once per day, not on every page view (saves Gemini quota).
+  const cached = await getTodayAISnapshot("penny");
+  if (Array.isArray(cached) && cached.length > 0) {
+    return NextResponse.json({
+      picks: cached,
+      generatedAt: new Date().toISOString(),
+      cached: true,
+      disclaimer:
+        "High-risk, high-reward. Small-cap stocks are volatile. Not financial advice.",
+    });
   }
 
   if (!(await withinDailyAIBudget())) {

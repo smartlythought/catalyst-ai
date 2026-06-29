@@ -32,6 +32,24 @@ export async function saveAISnapshot(
   }
 }
 
+/** Return today's saved snapshot for a kind, or null. Used to cache once/day. */
+export async function getTodayAISnapshot(
+  kind: "picks" | "penny" | "ipo"
+): Promise<any | null> {
+  try {
+    const sb = createServiceClient();
+    const { data } = await sb
+      .from("daily_ai_history")
+      .select("payload")
+      .eq("kind", kind)
+      .eq("snapshot_date", todayET())
+      .single();
+    return data?.payload ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export interface AISnapshotRow {
   kind: string;
   snapshot_date: string;

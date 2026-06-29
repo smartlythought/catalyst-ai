@@ -42,6 +42,13 @@ interface StockSnapshot {
   analystHold: number;
   analystSell: number;
   targetMean: number;
+  // Yahoo-sourced extra signals (free, same call).
+  forwardPE: number;
+  epsTtm: number;
+  epsForward: number;
+  week52ChangePct: number;
+  dividendYield: number;
+  analystRating: string;
 }
 
 const SCAN_UNIVERSE = [
@@ -120,6 +127,12 @@ async function buildSnapshots(): Promise<StockSnapshot[]> {
       analystHold: 0,
       analystSell: 0,
       targetMean: 0,
+      forwardPE: q.forwardPE,
+      epsTtm: q.epsTtm,
+      epsForward: q.epsForward,
+      week52ChangePct: q.week52ChangePct,
+      dividendYield: q.dividendYield,
+      analystRating: q.analystRating,
     });
   }
   console.log(`[picks] Yahoo snapshots: ${snapshots.length}/${symbols.length}`);
@@ -148,6 +161,12 @@ async function buildSnapshots(): Promise<StockSnapshot[]> {
         analystHold: 0,
         analystSell: 0,
         targetMean: 0,
+        forwardPE: q.pe ?? 0,
+        epsTtm: q.eps ?? 0,
+        epsForward: 0,
+        week52ChangePct: 0,
+        dividendYield: 0,
+        analystRating: "",
       });
     }
     console.log(`[picks] After FMP backfill: ${snapshots.length}/${symbols.length}`);
@@ -161,10 +180,20 @@ function buildStockData(snapshots: StockSnapshot[]): string {
   return shuffled.map(s => {
     let line = `${s.symbol} | $${s.price.toFixed(2)} | ${s.changePct >= 0 ? "+" : ""}${s.changePct.toFixed(2)}%`;
     if (s.pe > 0) line += ` | PE:${s.pe.toFixed(1)}`;
+    if (s.forwardPE > 0) line += ` | FwdPE:${s.forwardPE.toFixed(1)}`;
     if (s.marketCap > 0) line += ` | MCap:$${(s.marketCap / 1e9).toFixed(0)}B`;
     if (s.week52High > 0) line += ` | 52wH:$${s.week52High.toFixed(2)}`;
     if (s.week52Low > 0) line += ` | 52wL:$${s.week52Low.toFixed(2)}`;
-    if (s.analystBuy > 0) line += ` | Analysts:${s.analystBuy}B/${s.analystHold}H/${s.analystSell}S`;
+    if (s.week52ChangePct) line += ` | 52wChg:${s.week52ChangePct >= 0 ? "+" : ""}${s.week52ChangePct.toFixed(0)}%`;
+    // EPS growth proxy: forward vs trailing EPS.
+    if (s.epsTtm && s.epsForward) {
+      const g = ((s.epsForward - s.epsTtm) / Math.abs(s.epsTtm)) * 100;
+      line += ` | EPSg:${g >= 0 ? "+" : ""}${g.toFixed(0)}%`;
+    }
+    if (s.dividendYield > 0) line += ` | Div:${s.dividendYield.toFixed(1)}%`;
+    if (s.analystRating) line += ` | Analyst:${s.analystRating}`;
+    // Legacy Finnhub fields (only present on FMP-backfilled rows).
+    if (s.analystBuy > 0) line += ` | Rec:${s.analystBuy}B/${s.analystHold}H/${s.analystSell}S`;
     if (s.targetMean > 0) line += ` | AvgPT:$${s.targetMean.toFixed(2)}`;
     return line;
   }).join("\n");
@@ -180,11 +209,11 @@ function buildShortTermPrompt(stockData: string, count: number, today: string, p
   return `You are an elite stock analyst. Today is ${today} (${phase}). ${phaseHint}
 Below are REAL live prices and data for US stocks.
 
-LIVE MARKET DATA:
+LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell):
 ${stockData}
 
 TASK: Select exactly 10 stocks for SHORT-TERM trades (1–4 weeks).
-Focus on momentum, swing trades, catalysts, earnings plays, sector rotation.
+Focus on momentum, swing trades, catalysts, earnings plays, sector rotation. Use the analyst consensus rating and 52-week trend to confirm direction.
 
 RULES:
 1. Entry price within 1-3% of current price — users act TODAY.
@@ -205,7 +234,7 @@ function buildLongTermPrompt(stockData: string, count: number, today: string, ex
   return `You are an elite stock analyst focused on VALUE and GROWTH investing. Today is ${today}.
 Below are REAL live prices and data for US stocks.
 
-LIVE MARKET DATA:
+LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell):
 ${stockData}
 
 TASK: Select exactly 10 stocks for LONG-TERM positions (1–6 months).
@@ -216,7 +245,7 @@ RULES:
 1. Entry price within 1-5% of current price.
 2. BUY target: 10-30% upside. SELL target: 10-25% downside. Stop loss: 5-12%.
 3. Risk:reward at least 2:1. Conviction 70+ = high confidence.
-4. Prioritize stocks where analyst target is significantly above/below current price.
+4. Favor BUYs with a bullish analyst rating (≤2.0), reasonable forward PE, and positive EPS growth; SELLs with bearish ratings, stretched valuation, or negative EPS growth.
 5. Pick from at least 5 different sectors. Max 2 per sector.
 6. Include at least 3 mid-cap stocks (market cap under $50B).
 7. 7-8 BUY, 2-3 SELL.

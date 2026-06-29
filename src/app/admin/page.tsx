@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TabBar } from "@/components/tab-bar";
+import { isAdminEmail } from "@/lib/admin";
 
 interface JobDef {
   key: string;
@@ -103,6 +104,18 @@ export default function AdminPage() {
         <Link href="/auth/login" className="px-6 py-3 rounded-[14px] bg-accent-brand text-white font-bold text-[15px]">
           Sign in
         </Link>
+        <TabBar />
+      </div>
+    );
+  }
+
+  if (!isAdminEmail(email)) {
+    return (
+      <div className="min-h-dvh pb-24 safe-top flex flex-col items-center justify-center px-5 text-center">
+        <h1 className="text-[20px] font-extrabold mb-2">Admin</h1>
+        <p className="text-text-muted text-[14px]">
+          This account ({email}) isn&apos;t authorized for admin tools.
+        </p>
         <TabBar />
       </div>
     );

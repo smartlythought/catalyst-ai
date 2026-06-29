@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-// Only these accounts can trigger AI jobs. Override via ADMIN_EMAILS (CSV).
-const OWNER_EMAILS = (process.env.ADMIN_EMAILS || "info@smartlythought.com")
-  .split(",")
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
 
 const CRON_SECRET = process.env.CRON_SECRET || "";
 
@@ -27,7 +22,7 @@ export async function POST(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user || !OWNER_EMAILS.includes((user.email || "").toLowerCase())) {
+  if (!user || !isAdminEmail(user.email)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 

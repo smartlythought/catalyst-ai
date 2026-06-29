@@ -21,6 +21,13 @@ export interface YahooQuote {
   previousClose: number;
   dayHigh: number;
   dayLow: number;
+  // Extra signals — free in the same quote response, used to enrich AI analysis.
+  forwardPE: number;
+  epsTtm: number;
+  epsForward: number;
+  week52ChangePct: number;
+  dividendYield: number;
+  analystRating: string; // e.g. "1.5 - Strong Buy"
 }
 
 function normalize(r: any): YahooQuote {
@@ -39,6 +46,12 @@ function normalize(r: any): YahooQuote {
     previousClose: r.regularMarketPreviousClose || 0,
     dayHigh: r.regularMarketDayHigh || 0,
     dayLow: r.regularMarketDayLow || 0,
+    forwardPE: r.forwardPE || 0,
+    epsTtm: r.epsTrailingTwelveMonths || 0,
+    epsForward: r.epsForward || 0,
+    week52ChangePct: r.fiftyTwoWeekChangePercent || 0,
+    dividendYield: r.dividendYield || 0,
+    analystRating: r.averageAnalystRating || "",
   };
 }
 
