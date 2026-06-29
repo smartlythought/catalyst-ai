@@ -7,10 +7,11 @@
 // by this — they run once per trading day and are the core product.
 //
 // Uses NEXT_PUBLIC_ so the same flag works in both server routes and client
-// components. To re-enable: set NEXT_PUBLIC_USER_AI_ENABLED="true" in Vercel
-// and redeploy.
+// components. ENABLED by default now that paid Gemini billing is active — set
+// NEXT_PUBLIC_USER_AI_ENABLED="false" in Vercel to pause it again (e.g. if
+// costs spike).
 export const USER_AI_ENABLED =
-  process.env.NEXT_PUBLIC_USER_AI_ENABLED === "true";
+  process.env.NEXT_PUBLIC_USER_AI_ENABLED !== "false";
 
 export const USER_AI_DISABLED_MESSAGE =
   "AI chat & on-demand analysis are paused to conserve API quota. Daily Picks and market data are still live.";

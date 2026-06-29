@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { withinDailyAIBudget } from "@/lib/ai/usage";
 
 export const revalidate = 3600;
+export const maxDuration = 60;
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
+const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 
 interface IPO {
   name: string;
@@ -109,9 +113,65 @@ function scoreIPOs(ipos: IPO[]): IPO[] {
   });
 }
 
+/**
+ * Override the heuristic with real AI analysis where Gemini is available.
+ * Best of both: richer AI read when we have quota, deterministic fallback so
+ * the page is never blank. Cached hourly (revalidate=3600) → ~24 calls/day max.
+ */
+async function enrichWithAI(scored: IPO[]): Promise<IPO[]> {
+  if (!GEMINI_KEY || scored.length === 0) return scored;
+  if (!(await withinDailyAIBudget())) return scored;
+
+  const top = scored.slice(0, 12);
+  const prompt = `You are an IPO analyst. Assess each upcoming IPO below.
+
+IPOs:
+${top.map((ipo, i) => `${i + 1}. ${ipo.name} (${ipo.symbol}) - ${ipo.industry} - Price: ${ipo.priceRange} - Exchange: ${ipo.exchange} - Date: ${ipo.date}`).join("\n")}
+
+Return ONLY a JSON array of objects, each:
+- "symbol": ticker
+- "analysis": one-sentence assessment (max 110 chars)
+- "rating": "strong" | "moderate" | "weak" | "avoid"
+Consider sector trends, size, pricing, and market conditions.`;
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      const res = await geminiFetch(model, GEMINI_KEY, {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.3,
+          maxOutputTokens: 2048,
+        },
+      });
+      if (!res?.ok) continue;
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) continue;
+      const analyses: { symbol: string; analysis: string; rating: string }[] =
+        JSON.parse(text);
+      const bySymbol = new Map(analyses.map((a) => [a.symbol, a]));
+      return scored.map((ipo) => {
+        const a = bySymbol.get(ipo.symbol);
+        if (!a) return ipo; // keep heuristic for any the model skipped
+        return {
+          ...ipo,
+          aiAnalysis: a.analysis || ipo.aiAnalysis,
+          aiRating: (["strong", "moderate", "weak", "avoid"].includes(a.rating)
+            ? a.rating
+            : ipo.aiRating) as IPO["aiRating"],
+        };
+      });
+    } catch {
+      continue;
+    }
+  }
+  return scored; // AI unavailable → heuristic stands
+}
+
 export async function GET() {
   const ipos = await fetchFinnhubIPOs();
-  const scored = scoreIPOs(ipos);
+  const scored = await enrichWithAI(scoreIPOs(ipos));
 
   const sorted = scored.sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
