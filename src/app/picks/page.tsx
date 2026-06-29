@@ -235,9 +235,21 @@ export default function PicksPage() {
   return (
     <div className="min-h-dvh pb-24 safe-top">
       <header className="px-5 pt-4 pb-2">
-        <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
-          Daily Top 10
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
+            Daily Top 10
+          </h1>
+          <Link
+            href="/history"
+            className="text-[12px] font-bold text-accent-brand flex items-center gap-1"
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M8 5v3l2 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            History
+          </Link>
+        </div>
         <p className="text-[13px] text-text-muted mt-1">
           AI-recommended buy &amp; sell picks with targets
         </p>
