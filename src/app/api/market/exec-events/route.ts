@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { yahooBatchQuotes } from "@/lib/ingestion/yahoo";
 
 export const revalidate = 3600; // ISR: revalidate hourly
+export const maxDuration = 60;
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
@@ -70,53 +72,77 @@ function futureStr(days: number): string {
   return d.toISOString().split("T")[0];
 }
 
+// Minimum market cap to be worth showing — cuts micro-cap noise.
+const MIN_MARKET_CAP = 700_000_000; // $700M
+
+function impactForMarketCap(mcap: number): "high" | "medium" | "low" {
+  if (mcap >= 10_000_000_000) return "high"; // $10B+
+  if (mcap >= 2_000_000_000) return "medium"; // $2B–10B
+  return "low"; // $700M–2B
+}
+
 async function fetchFinnhubEarnings(): Promise<ExecEvent[]> {
   if (!FINNHUB_KEY) return [];
 
   try {
     const from = todayStr();
-    const to = futureStr(21);
+    const to = futureStr(20); // next ~20 days
     const res = await fetch(
       `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${FINNHUB_KEY}`,
       { next: { revalidate: 3600 } }
     );
-
     if (!res.ok) return [];
 
     const data = await res.json();
-    const megaCapSet = new Set(MEGA_CAP_TICKERS);
 
-    // Show the whole upcoming calendar, not just 20 mega-caps. Sort soonest-
-    // first, and on a given day surface analyst-covered names (recognizable
-    // companies) ahead of obscure micro-caps. Cap so the payload stays sane.
-    return (data.earningsCalendar || [])
+    // Soonest-first candidates (dedupe symbols, drop dual-class ".X" tickers).
+    const seen = new Set<string>();
+    const candidates: any[] = [];
+    for (const e of (data.earningsCalendar || [])
       .filter((e: any) => e.symbol && e.date && !e.symbol.includes("."))
-      .sort((a: any, b: any) => {
-        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-        const ac = a.epsEstimate != null ? 0 : 1;
-        const bc = b.epsEstimate != null ? 0 : 1;
-        return ac - bc;
+      .sort((a: any, b: any) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))) {
+      if (seen.has(e.symbol)) continue;
+      seen.add(e.symbol);
+      candidates.push(e);
+      if (candidates.length >= 250) break;
+    }
+
+    // Enrich with market cap + real company name via Yahoo (free batch),
+    // then keep only companies >= $700M so the list is meaningful.
+    const quotes = await yahooBatchQuotes(candidates.map((c) => c.symbol));
+
+    return candidates
+      .map((e: any) => {
+        const q = quotes.get(e.symbol);
+        const mcap = q?.marketCap || 0;
+        if (mcap < MIN_MARKET_CAP) return null;
+        const name = q?.name || MEGA_CAP_NAMES[e.symbol] || e.symbol;
+        const capLabel =
+          mcap >= 1e12
+            ? `$${(mcap / 1e12).toFixed(1)}T`
+            : mcap >= 1e9
+              ? `$${(mcap / 1e9).toFixed(1)}B`
+              : `$${(mcap / 1e6).toFixed(0)}M`;
+        return {
+          company: name,
+          ticker: e.symbol,
+          eventType: "Earnings Call",
+          date: e.date,
+          time: e.hour === 0 ? "Before market open" : "After market close",
+          description: `${name} (${capLabel} mkt cap) Q${getQuarter(e.date)} earnings.${
+            e.epsEstimate != null ? ` EPS est: $${e.epsEstimate.toFixed(2)}.` : ""
+          }${
+            e.revenueEstimate != null
+              ? ` Rev est: $${formatRevenue(e.revenueEstimate)}.`
+              : ""
+          }`,
+          impact: impactForMarketCap(mcap),
+          marketCap: mcap,
+        };
       })
-      .slice(0, 40)
-      .map((e: any) => ({
-        company: MEGA_CAP_NAMES[e.symbol] || e.symbol,
-        ticker: e.symbol,
-        eventType: "Earnings Call",
-        date: e.date,
-        time: e.hour === 0 ? "Before market open" : "After market close",
-        description: `${MEGA_CAP_NAMES[e.symbol] || e.symbol} Q${getQuarter(e.date)} earnings report.${
-          e.epsEstimate != null
-            ? ` EPS estimate: $${e.epsEstimate.toFixed(2)}.`
-            : ""
-        }${
-          e.revenueEstimate != null
-            ? ` Revenue estimate: $${formatRevenue(e.revenueEstimate)}.`
-            : ""
-        }`,
-        impact: (megaCapSet.has(e.symbol) ? "high" : "medium") as
-          | "high"
-          | "medium",
-      }));
+      .filter((e): e is ExecEvent & { marketCap: number } => e !== null)
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+      .slice(0, 60);
   } catch {
     return [];
   }
