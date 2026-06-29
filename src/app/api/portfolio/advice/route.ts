@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 
 interface HoldingInput {
   ticker: string;
@@ -47,6 +48,10 @@ export async function POST(request: NextRequest) {
       { error: "Invalid request body" },
       { status: 400 }
     );
+  }
+
+  if (!(await withinDailyAIBudget())) {
+    return NextResponse.json({ error: AI_BUDGET_MESSAGE }, { status: 429 });
   }
 
   const totalValue = holdings.reduce(

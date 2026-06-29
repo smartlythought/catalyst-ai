@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { GEMINI_MODELS } from "@/lib/ai/models";
+import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,10 @@ interface PennyPick {
 export async function GET() {
   if (!GEMINI_KEY) {
     return NextResponse.json({ error: "AI not configured" }, { status: 500 });
+  }
+
+  if (!(await withinDailyAIBudget())) {
+    return NextResponse.json({ error: AI_BUDGET_MESSAGE, picks: [] }, { status: 429 });
   }
 
   const today = new Date().toISOString().split("T")[0];

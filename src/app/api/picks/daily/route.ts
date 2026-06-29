@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendDailyPicksDigest } from "@/lib/email";
 import { GEMINI_MODELS } from "@/lib/ai/models";
+import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 
 export const dynamic = "force-dynamic";
 
@@ -377,6 +378,17 @@ export async function GET(request: Request) {
     if (cached) {
       return NextResponse.json(cached);
     }
+  }
+
+  // Fresh generation makes Gemini calls — respect the daily budget. Serve
+  // stale cache if available rather than failing outright.
+  if (!(await withinDailyAIBudget())) {
+    const stale = await getCachedPicks(tradingDate);
+    if (stale) return NextResponse.json(stale);
+    return NextResponse.json(
+      { error: AI_BUDGET_MESSAGE, picks: [] },
+      { status: 429 }
+    );
   }
 
   try {

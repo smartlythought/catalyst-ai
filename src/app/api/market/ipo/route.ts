@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { GEMINI_MODELS } from "@/lib/ai/models";
+import { withinDailyAIBudget } from "@/lib/ai/usage";
 
 export const revalidate = 3600;
 
@@ -69,7 +70,11 @@ async function fetchFinnhubIPOs(): Promise<IPO[]> {
 }
 
 async function analyzeIPOs(ipos: IPO[]): Promise<IPO[]> {
-  if (!GEMINI_KEY || ipos.length === 0) return ipos;
+  // Skip AI enrichment when unconfigured, empty, or over the daily budget —
+  // the IPO list itself still returns, just without AI ratings.
+  if (!GEMINI_KEY || ipos.length === 0 || !(await withinDailyAIBudget())) {
+    return ipos;
+  }
 
   const top = ipos.slice(0, 15);
   const prompt = `You are an IPO analyst. Analyze these upcoming IPOs and provide a brief assessment for each.

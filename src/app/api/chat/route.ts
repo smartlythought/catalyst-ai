@@ -5,6 +5,7 @@ import { getQuote, getAnalystRatings, getCompanyProfile } from "@/lib/ingestion/
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { runResearchAgent } from "@/lib/ai/agent";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -81,6 +82,10 @@ export async function POST(request: NextRequest) {
 
   if (!GEMINI_KEY) {
     return NextResponse.json({ error: "AI not configured" }, { status: 503 });
+  }
+
+  if (!(await withinDailyAIBudget())) {
+    return NextResponse.json({ error: AI_BUDGET_MESSAGE }, { status: 429 });
   }
 
   const svc = createServiceClient();
