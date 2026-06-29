@@ -361,6 +361,11 @@ export async function GET(request: Request) {
   if (!forceRefresh) {
     const cached = await getCachedPicks(tradingDate);
     if (cached) {
+      // Also archive to history when serving from cache, so every day with
+      // picks gets a history row (not only on fresh generation). Idempotent.
+      if (Array.isArray(cached.picks) && cached.picks.length > 0) {
+        await saveAISnapshot("picks", cached.picks);
+      }
       return NextResponse.json(cached);
     }
   }
