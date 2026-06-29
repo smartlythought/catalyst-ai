@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
+import { saveAISnapshot } from "@/lib/ai/history";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -132,6 +133,8 @@ Return ONLY the JSON array.`;
       })
     );
   }
+
+  await saveAISnapshot("penny", picks);
 
   return NextResponse.json({
     picks,

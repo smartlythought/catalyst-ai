@@ -1,32 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/ingest",
-      "schedule": "30 13 * * 1-5"
-    },
-    {
-      "path": "/api/ingest?offset=15",
-      "schedule": "30 15 * * 1-5"
-    },
-    {
-      "path": "/api/ingest?offset=30",
-      "schedule": "30 17 * * 1-5"
-    },
-    {
-      "path": "/api/ingest/deep?offset=0&limit=20",
-      "schedule": "30 19 * * 1-5"
-    },
-    {
-      "path": "/api/ingest/deep?offset=20&limit=20",
-      "schedule": "0 21 * * 1-5"
-    },
-    {
       "path": "/api/ingest/universe",
       "schedule": "0 10 * * 1"
-    },
-    {
-      "path": "/api/ingest/weekly-picks",
-      "schedule": "0 18 * * 0"
     }
   ]
 }

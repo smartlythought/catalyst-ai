@@ -12,6 +12,9 @@ import {
 import { dispatchSignalAlerts } from "@/lib/whatsapp";
 import { dispatchEmailAlerts } from "@/lib/email";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
 export async function POST(request: NextRequest) {

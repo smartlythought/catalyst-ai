@@ -106,6 +106,9 @@ async function callGemini(prompt: string): Promise<AICallResult> {
           temperature: 0.3,
           topP: 0.8,
           responseMimeType: "application/json",
+          // Disable 2.5-flash "thinking" — faster + cheaper per call, which
+          // matters for the bulk ingestion (many calls per run).
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
     }).catch(() => null);

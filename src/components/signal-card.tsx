@@ -53,6 +53,36 @@ export function SignalCard({ signal }: SignalCardProps) {
           label={signal.horizon}
         />
 
+        {/* Row 2b: Trade levels inline — no click-through needed */}
+        {signal.entry != null && signal.target != null && signal.stop != null && (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-surface-2 rounded-[10px] px-2.5 py-1.5 text-center">
+              <div className="text-[8px] text-text-faint font-mono uppercase tracking-[0.5px]">
+                Entry
+              </div>
+              <div className="font-mono text-[13px] font-bold">
+                ${signal.entry.toFixed(2)}
+              </div>
+            </div>
+            <div className="bg-surface-2 rounded-[10px] px-2.5 py-1.5 text-center">
+              <div className="text-[8px] text-text-faint font-mono uppercase tracking-[0.5px]">
+                Target
+              </div>
+              <div className="font-mono text-[13px] font-bold text-pos-green-bright">
+                ${signal.target.toFixed(2)}
+              </div>
+            </div>
+            <div className="bg-surface-2 rounded-[10px] px-2.5 py-1.5 text-center">
+              <div className="text-[8px] text-text-faint font-mono uppercase tracking-[0.5px]">
+                Stop
+              </div>
+              <div className="font-mono text-[13px] font-bold text-neg-red-bright">
+                ${signal.stop.toFixed(2)}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Row 3: Tag chips */}
         <div className="flex flex-wrap gap-1.5">
           {signal.tags.map((tag) => (

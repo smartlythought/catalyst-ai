@@ -4,6 +4,7 @@ import { sendDailyPicksDigest } from "@/lib/email";
 import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { yahooBatchQuotes } from "@/lib/ingestion/yahoo";
+import { saveAISnapshot } from "@/lib/ai/history";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -432,6 +433,7 @@ export async function GET(request: Request) {
     const validated = validatePicks(picks, snapshots);
 
     await storePicks(tradingDate, validated, snapshots.length);
+    await saveAISnapshot("picks", validated);
 
     sendDailyPicksDigest(validated, tradingDate).catch(() => {});
 

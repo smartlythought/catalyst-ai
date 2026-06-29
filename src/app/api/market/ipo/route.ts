@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 import { withinDailyAIBudget } from "@/lib/ai/usage";
+import { saveAISnapshot } from "@/lib/ai/history";
 
 export const revalidate = 3600;
 export const maxDuration = 60;
@@ -176,6 +177,8 @@ export async function GET() {
   const sorted = scored.sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
+
+  if (sorted.length > 0) await saveAISnapshot("ipo", sorted);
 
   return NextResponse.json({
     ipos: sorted,
