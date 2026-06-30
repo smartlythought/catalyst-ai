@@ -4,9 +4,12 @@
 const KEY = process.env.ALPACA_API_KEY || "";
 const SECRET = process.env.ALPACA_API_SECRET || "";
 // Default to the PAPER endpoint. Set ALPACA_BASE_URL to the live URL only when
-// you deliberately want real-money trading.
-const BASE =
-  process.env.ALPACA_BASE_URL || "https://paper-api.alpaca.markets";
+// you deliberately want real-money trading. Normalize: drop trailing slashes
+// and a trailing "/v2" (we append "/v2/..." ourselves), so it works whether
+// the value is "https://paper-api.alpaca.markets" or ".../v2".
+const BASE = (process.env.ALPACA_BASE_URL || "https://paper-api.alpaca.markets")
+  .replace(/\/+$/, "")
+  .replace(/\/v2$/, "");
 
 export const ALPACA_ENABLED = Boolean(KEY && SECRET);
 export const ALPACA_IS_PAPER = BASE.includes("paper-api");
