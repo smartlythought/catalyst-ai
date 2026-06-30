@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { sendDailyPicksDigest } from "@/lib/email";
 import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
-import { yahooBatchQuotes, yahooMarketContext, type MarketContext } from "@/lib/ingestion/yahoo";
+import { yahooBatchQuotes, getMarketContextText } from "@/lib/ingestion/yahoo";
 import { saveAISnapshot } from "@/lib/ai/history";
 
 export const dynamic = "force-dynamic";
@@ -197,13 +197,6 @@ function buildStockData(snapshots: StockSnapshot[]): string {
     if (s.targetMean > 0) line += ` | AvgPT:$${s.targetMean.toFixed(2)}`;
     return line;
   }).join("\n");
-}
-
-function buildMacro(m: MarketContext | null): string {
-  if (!m) return "";
-  const regime =
-    m.vix > 25 ? "elevated — risk-off" : m.vix < 15 ? "low — risk-on" : "moderate";
-  return `MARKET CONTEXT: 10Y Treasury ${m.tenYearYield.toFixed(2)}%, VIX ${m.vix.toFixed(1)} (${regime}), S&P ${m.sp500ChangePct >= 0 ? "+" : ""}${m.sp500ChangePct.toFixed(2)}%, Nasdaq ${m.nasdaqChangePct >= 0 ? "+" : ""}${m.nasdaqChangePct.toFixed(2)}%, Dow ${m.dowChangePct >= 0 ? "+" : ""}${m.dowChangePct.toFixed(2)}%. Factor this regime into risk appetite and sector tilt.\n\n`;
 }
 
 function buildShortTermPrompt(stockData: string, count: number, today: string, phase: string, macro: string): string {
@@ -404,9 +397,9 @@ export async function GET(request: Request) {
 
     const phase = getMarketPhase();
     const stockData = buildStockData(snapshots);
-    // Free macro snapshot (rates, VIX, index trend) → the AI factors the regime
-    // into its risk appetite and sector tilt. One Yahoo call, no key.
-    const macro = buildMacro(await yahooMarketContext());
+    // Free macro snapshot (yield curve, VIX, USD, oil, gold, index trend) →
+    // the AI factors the regime into risk appetite and sector tilt. One call.
+    const macro = await getMarketContextText();
 
     let geminiErr = "";
     async function callGemini(prompt: string): Promise<Pick[]> {

@@ -3,6 +3,7 @@ import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
 import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
+import { getMarketContextText } from "@/lib/ingestion/yahoo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -55,10 +56,11 @@ export async function GET() {
   }
 
   const today = new Date().toISOString().split("T")[0];
+  const macro = await getMarketContextText();
 
   const prompt = `You are a US stock market analyst specializing in small-cap and micro-cap stocks with high growth potential. Today is ${today}.
 
-Identify 10 US-listed stocks priced under $20 that have strong fundamentals and high growth potential. Focus on:
+${macro}Identify 10 US-listed stocks priced under $20 that have strong fundamentals and high growth potential. Focus on:
 - Strong revenue growth (>20% YoY)
 - Improving margins or path to profitability
 - Innovative products/technology in growing markets

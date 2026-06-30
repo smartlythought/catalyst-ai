@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 import { withinDailyAIBudget } from "@/lib/ai/usage";
 import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
+import { getMarketContextText } from "@/lib/ingestion/yahoo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -124,9 +125,10 @@ async function enrichWithAI(scored: IPO[]): Promise<IPO[]> {
   if (!(await withinDailyAIBudget())) return scored;
 
   const top = scored.slice(0, 12);
+  const macro = await getMarketContextText();
   const prompt = `You are an IPO analyst. Assess each upcoming IPO below.
 
-IPOs:
+${macro}IPOs:
 ${top.map((ipo, i) => `${i + 1}. ${ipo.name} (${ipo.symbol}) - ${ipo.industry} - Price: ${ipo.priceRange} - Exchange: ${ipo.exchange} - Date: ${ipo.date}`).join("\n")}
 
 Return ONLY a JSON array of objects, each:

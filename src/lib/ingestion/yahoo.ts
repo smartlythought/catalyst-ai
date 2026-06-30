@@ -88,24 +88,37 @@ export async function yahooQuote(symbol: string): Promise<YahooQuote | null> {
 }
 
 export interface MarketContext {
+  threeMonthYield: number; // ^IRX
   tenYearYield: number; // ^TNX
+  thirtyYearYield: number; // ^TYX
   vix: number; // ^VIX
+  dollarIndex: number; // DX-Y.NYB
+  wti: number; // CL=F crude
+  gold: number; // GC=F
   sp500ChangePct: number; // ^GSPC
   nasdaqChangePct: number; // ^IXIC
   dowChangePct: number; // ^DJI
 }
 
-/** Free macro snapshot from Yahoo index quotes — no API key needed. */
+/** Free macro snapshot from Yahoo index/commodity quotes — no API key needed. */
 export async function yahooMarketContext(): Promise<MarketContext | null> {
   try {
-    const res = await yf.quote(["^TNX", "^VIX", "^GSPC", "^IXIC", "^DJI"]);
+    const res = await yf.quote([
+      "^IRX", "^TNX", "^TYX", "^VIX", "DX-Y.NYB", "CL=F", "GC=F",
+      "^GSPC", "^IXIC", "^DJI",
+    ]);
     const arr = Array.isArray(res) ? res : [res];
     const m = new Map(arr.map((r: any) => [r.symbol, r]));
     const px = (s: string) => m.get(s)?.regularMarketPrice || 0;
     const chg = (s: string) => m.get(s)?.regularMarketChangePercent || 0;
     return {
+      threeMonthYield: px("^IRX"),
       tenYearYield: px("^TNX"),
+      thirtyYearYield: px("^TYX"),
       vix: px("^VIX"),
+      dollarIndex: px("DX-Y.NYB"),
+      wti: px("CL=F"),
+      gold: px("GC=F"),
       sp500ChangePct: chg("^GSPC"),
       nasdaqChangePct: chg("^IXIC"),
       dowChangePct: chg("^DJI"),
@@ -113,6 +126,34 @@ export async function yahooMarketContext(): Promise<MarketContext | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Single shared macro block injected into every AI generation prompt (picks,
+ * penny, IPO) so the analysis is regime-aware. Returns "" if unavailable.
+ */
+export async function getMarketContextText(): Promise<string> {
+  const m = await yahooMarketContext();
+  if (!m) return "";
+  const regime =
+    m.vix > 25 ? "elevated — risk-off" : m.vix < 15 ? "low — risk-on" : "moderate";
+  const curve =
+    m.threeMonthYield && m.tenYearYield
+      ? m.tenYearYield < m.threeMonthYield
+        ? "inverted (recession signal)"
+        : "normal"
+      : "n/a";
+  const parts = [
+    `Yield curve ${curve} (3M ${m.threeMonthYield.toFixed(2)}% / 10Y ${m.tenYearYield.toFixed(2)}% / 30Y ${m.thirtyYearYield.toFixed(2)}%)`,
+    `VIX ${m.vix.toFixed(1)} (${regime})`,
+    m.dollarIndex ? `US Dollar ${m.dollarIndex.toFixed(1)}` : "",
+    m.wti ? `WTI $${m.wti.toFixed(0)}` : "",
+    m.gold ? `Gold $${m.gold.toFixed(0)}` : "",
+    `S&P ${m.sp500ChangePct >= 0 ? "+" : ""}${m.sp500ChangePct.toFixed(2)}%`,
+    `Nasdaq ${m.nasdaqChangePct >= 0 ? "+" : ""}${m.nasdaqChangePct.toFixed(2)}%`,
+    `Dow ${m.dowChangePct >= 0 ? "+" : ""}${m.dowChangePct.toFixed(2)}%`,
+  ].filter(Boolean);
+  return `MARKET CONTEXT: ${parts.join(" · ")}. Factor this regime (rates, volatility, USD, commodities, breadth) into risk appetite and sector tilt.\n\n`;
 }
 
 export interface YahooFundamentals {
