@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ALPACA_ENABLED, ALPACA_IS_PAPER, getAccount } from "@/lib/trading/alpaca";
 
 export const dynamic = "force-dynamic";
+// Redeploy bump: pick up ALPACA_API_KEY / ALPACA_API_SECRET env vars.
 
 /**
  * Diagnostic for the Alpaca connection. Confirms keys are present, whether
