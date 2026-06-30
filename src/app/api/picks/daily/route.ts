@@ -25,6 +25,14 @@ interface Pick {
   rationale: string;
   catalysts: string[];
   currentPrice?: number;
+  // Deep-dive fundamentals attached in pass 2 (for display).
+  fundamentals?: {
+    analystConsensus?: string;
+    peg?: number;
+    priceTarget?: number;
+    roe?: number;
+    revGrowth?: number;
+  };
 }
 
 interface StockSnapshot {
@@ -371,6 +379,8 @@ async function deepRefinePicks(picks: Pick[]): Promise<Pick[]> {
   if (!GEMINI_KEY || picks.length === 0) return picks;
   try {
     const lines: string[] = [];
+    // symbol -> compact fundamentals for display on the cards
+    const fundMap = new Map<string, Pick["fundamentals"]>();
     for (let i = 0; i < picks.length; i += 6) {
       const batch = picks.slice(i, i + 6);
       const results = await Promise.all(
@@ -395,6 +405,13 @@ async function deepRefinePicks(picks: Pick[]): Promise<Pick[]> {
               const a = f.analystTrend;
               line += ` Analysts:${a.strongBuy}SB/${a.buy}B/${a.hold}H/${a.sell}S/${a.strongSell}SS`;
             }
+            fundMap.set(p.symbol.toUpperCase(), {
+              analystConsensus: f.recommendationKey || undefined,
+              peg: f.pegRatio || undefined,
+              priceTarget: f.targetMeanPrice || undefined,
+              roe: f.returnOnEquity || undefined,
+              revGrowth: f.revenueGrowth || undefined,
+            });
           }
           if (social) line += ` ${social}`;
           return line;
@@ -442,8 +459,10 @@ Return ONLY a JSON array: [{"symbol","conviction","rationale"}].`;
 
     const bySym = new Map(parsed.map((r: any) => [String(r.symbol).toUpperCase(), r]));
     return picks.map((p) => {
-      const r = bySym.get(p.symbol.toUpperCase());
-      if (!r) return p;
+      const key = p.symbol.toUpperCase();
+      const fundamentals = fundMap.get(key) || p.fundamentals;
+      const r = bySym.get(key);
+      if (!r) return { ...p, fundamentals };
       const conv =
         typeof r.conviction === "number"
           ? Math.max(50, Math.min(95, Math.round(r.conviction)))
@@ -452,7 +471,7 @@ Return ONLY a JSON array: [{"symbol","conviction","rationale"}].`;
         typeof r.rationale === "string" && r.rationale.length > 10
           ? r.rationale
           : p.rationale;
-      return { ...p, conviction: conv, rationale };
+      return { ...p, conviction: conv, rationale, fundamentals };
     });
   } catch (e) {
     console.log("[picks] deep refine failed (using pass-1):", e);

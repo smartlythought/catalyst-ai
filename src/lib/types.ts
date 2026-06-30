@@ -32,6 +32,13 @@ export interface Signal {
   signals: SignalBreakdown[];
   sparkline: number[];
   timestamp: string;
+  fundamentals?: {
+    analystConsensus?: string;
+    peg?: number;
+    priceTarget?: number;
+    roe?: number;
+    revGrowth?: number;
+  };
 }
 
 export interface SignalBreakdown {
