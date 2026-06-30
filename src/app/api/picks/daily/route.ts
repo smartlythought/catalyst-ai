@@ -4,7 +4,8 @@ import { sendDailyPicksDigest } from "@/lib/email";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { yahooBatchQuotes, getMarketContextText, yahooFundamentals } from "@/lib/ingestion/yahoo";
-import { saveAISnapshot } from "@/lib/ai/history";
+import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
+import { autoTradePicks } from "@/lib/trading/autotrade";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -618,6 +619,19 @@ export async function GET(request: Request) {
 
     await storePicks(tradingDate, refined, snapshots.length);
     await saveAISnapshot("picks", refined);
+
+    // Fully-automatic PAPER trading: once per day, turn today's short-term,
+    // high-conviction (>85%) BUYs into bracket orders after a final AI research
+    // pass. Idempotent (skip if already traded today) and fully fail-soft.
+    try {
+      const alreadyTraded = await getTodayAISnapshot("trades");
+      if (!alreadyTraded) {
+        const trade = await autoTradePicks(refined);
+        await saveAISnapshot("trades", trade);
+      }
+    } catch (e) {
+      console.log("[picks] auto-trade skipped:", e);
+    }
 
     sendDailyPicksDigest(refined, tradingDate).catch(() => {});
 

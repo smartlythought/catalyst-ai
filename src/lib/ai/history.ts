@@ -13,7 +13,7 @@ function todayET(): string {
  * (kind, day). Fail-soft — never breaks the calling route.
  */
 export async function saveAISnapshot(
-  kind: "picks" | "penny" | "ipo",
+  kind: "picks" | "penny" | "ipo" | "trades",
   payload: unknown
 ): Promise<void> {
   try {
@@ -34,7 +34,7 @@ export async function saveAISnapshot(
 
 /** Return today's saved snapshot for a kind, or null. Used to cache once/day. */
 export async function getTodayAISnapshot(
-  kind: "picks" | "penny" | "ipo"
+  kind: "picks" | "penny" | "ipo" | "trades"
 ): Promise<any | null> {
   try {
     const sb = createServiceClient();
