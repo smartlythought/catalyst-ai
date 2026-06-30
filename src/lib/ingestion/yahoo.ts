@@ -1,4 +1,5 @@
 import YahooFinance from "yahoo-finance2";
+import { getFredMacro } from "@/lib/ingestion/fred";
 
 // Single shared instance. Yahoo Finance data is free, keyless, and effectively
 // unlimited — the Node equivalent of Python's yfinance. Used as the primary
@@ -152,8 +153,17 @@ export async function getMarketContextText(): Promise<string> {
     `S&P ${m.sp500ChangePct >= 0 ? "+" : ""}${m.sp500ChangePct.toFixed(2)}%`,
     `Nasdaq ${m.nasdaqChangePct >= 0 ? "+" : ""}${m.nasdaqChangePct.toFixed(2)}%`,
     `Dow ${m.dowChangePct >= 0 ? "+" : ""}${m.dowChangePct.toFixed(2)}%`,
-  ].filter(Boolean);
-  return `MARKET CONTEXT: ${parts.join(" · ")}. Factor this regime (rates, volatility, USD, commodities, breadth) into risk appetite and sector tilt.\n\n`;
+  ];
+
+  // Fold in FRED economic data when configured (CPI / unemployment / fed funds).
+  const fred = await getFredMacro();
+  if (fred) {
+    if (fred.cpiYoY != null) parts.push(`CPI ${fred.cpiYoY.toFixed(1)}% YoY`);
+    if (fred.unemployment != null) parts.push(`Unemployment ${fred.unemployment.toFixed(1)}%`);
+    if (fred.fedFunds != null) parts.push(`Fed funds ${fred.fedFunds.toFixed(2)}%`);
+  }
+
+  return `MARKET CONTEXT: ${parts.filter(Boolean).join(" · ")}. Factor this regime (rates, inflation, volatility, USD, commodities, breadth) into risk appetite and sector tilt.\n\n`;
 }
 
 export interface YahooFundamentals {

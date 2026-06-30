@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendDailyPicksDigest } from "@/lib/email";
-import { GEMINI_MODELS } from "@/lib/ai/models";
+import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
-import { yahooBatchQuotes, getMarketContextText } from "@/lib/ingestion/yahoo";
+import { yahooBatchQuotes, getMarketContextText, yahooFundamentals } from "@/lib/ingestion/yahoo";
 import { saveAISnapshot } from "@/lib/ai/history";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ export const maxDuration = 60;
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const FMP_KEY = process.env.FMP_API_KEY || "";
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
 interface Pick {
   symbol: string;
@@ -338,6 +339,127 @@ async function getCachedPicks(tradingDate: string): Promise<any | null> {
   }
 }
 
+/** Finnhub social sentiment summary line for one symbol, or "". */
+async function fetchSocialLine(symbol: string): Promise<string> {
+  if (!FINNHUB_KEY) return "";
+  try {
+    const res = await fetch(
+      `https://finnhub.io/api/v1/stock/social-sentiment?symbol=${symbol}&token=${FINNHUB_KEY}`
+    );
+    if (!res.ok) return "";
+    const d = await res.json();
+    const r = d.reddit || [];
+    const t = d.twitter || [];
+    const sum = (a: any[], k: string) => a.reduce((s, x) => s + (x[k] || 0), 0);
+    const mentions = sum(r, "mention") + sum(t, "mention");
+    if (!mentions) return "";
+    const net =
+      sum(r, "positiveScore") + sum(t, "positiveScore") -
+      (sum(r, "negativeScore") + sum(t, "negativeScore"));
+    return `Social:${mentions}mentions/net${net >= 0 ? "+" : ""}${net.toFixed(1)}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Pass 2 — deep-dive the finalist picks: enrich each with deep fundamentals
+ * (Yahoo) + social sentiment (Finnhub), then have the AI refine conviction &
+ * rationale using that data. FAIL-SOFT: any error returns pass-1 picks intact.
+ */
+async function deepRefinePicks(picks: Pick[]): Promise<Pick[]> {
+  if (!GEMINI_KEY || picks.length === 0) return picks;
+  try {
+    const lines: string[] = [];
+    for (let i = 0; i < picks.length; i += 6) {
+      const batch = picks.slice(i, i + 6);
+      const results = await Promise.all(
+        batch.map(async (p) => {
+          const [f, social] = await Promise.all([
+            yahooFundamentals(p.symbol),
+            fetchSocialLine(p.symbol),
+          ]);
+          let line = `${p.symbol}(${p.action})`;
+          if (f) {
+            if (f.recommendationKey) line += ` Rec:${f.recommendationKey}`;
+            if (f.targetMeanPrice) line += ` PT:$${f.targetMeanPrice.toFixed(2)}`;
+            if (f.profitMargin) line += ` Margin:${(f.profitMargin * 100).toFixed(1)}%`;
+            if (f.returnOnEquity) line += ` ROE:${(f.returnOnEquity * 100).toFixed(0)}%`;
+            if (f.revenueGrowth) line += ` RevGr:${(f.revenueGrowth * 100).toFixed(0)}%`;
+            if (f.earningsGrowth) line += ` EPSGr:${(f.earningsGrowth * 100).toFixed(0)}%`;
+            if (f.debtToEquity) line += ` D/E:${f.debtToEquity.toFixed(0)}`;
+            if (f.pegRatio) line += ` PEG:${f.pegRatio.toFixed(2)}`;
+            if (f.beta) line += ` Beta:${f.beta.toFixed(2)}`;
+            if (f.shortPercentOfFloat) line += ` ShortFloat:${(f.shortPercentOfFloat * 100).toFixed(1)}%`;
+            if (f.analystTrend) {
+              const a = f.analystTrend;
+              line += ` Analysts:${a.strongBuy}SB/${a.buy}B/${a.hold}H/${a.sell}S/${a.strongSell}SS`;
+            }
+          }
+          if (social) line += ` ${social}`;
+          return line;
+        })
+      );
+      lines.push(...results);
+    }
+
+    const picksList = picks
+      .map((p) => `${p.symbol} ${p.action} entry $${p.entryPrice} target $${p.targetPrice} stop $${p.stopLoss} (${p.timeframe})`)
+      .join("\n");
+
+    const prompt = `You are an elite analyst doing a FINAL review of today's selected picks using DEEP fundamentals and social sentiment. For EACH symbol, return a refined conviction (50-95) and a sharper 2-sentence rationale that cites the single strongest data point (valuation, growth, analyst consensus, or sentiment). Keep the same action and price levels.
+
+SELECTED PICKS:
+${picksList}
+
+DEEP DATA (Rec=analyst consensus, PT=mean target, ROE/Margin/growth, D/E, PEG, Beta, ShortFloat, Analysts SB/B/H/S/SS, Social=mention volume & net sentiment):
+${lines.join("\n")}
+
+Return ONLY a JSON array: [{"symbol","conviction","rationale"}].`;
+
+    let parsed: any[] | null = null;
+    for (const model of GEMINI_MODELS) {
+      const res = await geminiFetch(model, GEMINI_KEY, {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.3,
+          maxOutputTokens: 4096,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      });
+      if (!res?.ok) continue;
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) continue;
+      const arr = JSON.parse(text);
+      if (Array.isArray(arr) && arr.length) {
+        parsed = arr;
+        break;
+      }
+    }
+    if (!parsed) return picks;
+
+    const bySym = new Map(parsed.map((r: any) => [String(r.symbol).toUpperCase(), r]));
+    return picks.map((p) => {
+      const r = bySym.get(p.symbol.toUpperCase());
+      if (!r) return p;
+      const conv =
+        typeof r.conviction === "number"
+          ? Math.max(50, Math.min(95, Math.round(r.conviction)))
+          : p.conviction;
+      const rationale =
+        typeof r.rationale === "string" && r.rationale.length > 10
+          ? r.rationale
+          : p.rationale;
+      return { ...p, conviction: conv, rationale };
+    });
+  } catch (e) {
+    console.log("[picks] deep refine failed (using pass-1):", e);
+    return picks;
+  }
+}
+
 async function storePicks(tradingDate: string, picks: Pick[], scanned: number) {
   try {
     const sb = createServiceClient();
@@ -470,13 +592,18 @@ export async function GET(request: Request) {
 
     const validated = validatePicks(picks, snapshots);
 
-    await storePicks(tradingDate, validated, snapshots.length);
-    await saveAISnapshot("picks", validated);
+    // Pass 2 — deep-dive the finalists: enrich each with deep fundamentals +
+    // social sentiment, then let the AI refine conviction & rationale. Fully
+    // fail-soft: any error leaves the pass-1 picks untouched.
+    const refined = await deepRefinePicks(validated);
 
-    sendDailyPicksDigest(validated, tradingDate).catch(() => {});
+    await storePicks(tradingDate, refined, snapshots.length);
+    await saveAISnapshot("picks", refined);
+
+    sendDailyPicksDigest(refined, tradingDate).catch(() => {});
 
     return NextResponse.json({
-      picks: validated,
+      picks: refined,
       generatedAt: new Date().toISOString(),
       stocksScanned: snapshots.length,
       disclaimer: "AI-generated recommendations for informational purposes only. Not financial advice.",
