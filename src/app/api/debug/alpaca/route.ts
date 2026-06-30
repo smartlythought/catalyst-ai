@@ -30,3 +30,5 @@ export async function GET() {
       : "Keys present but the account call failed — double-check the Key/Secret and that they're PAPER keys.",
   });
 }
+
+// deploy: pick up ALPACA keys (set 1757Z)
