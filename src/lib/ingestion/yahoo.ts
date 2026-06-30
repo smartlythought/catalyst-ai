@@ -87,6 +87,91 @@ export async function yahooQuote(symbol: string): Promise<YahooQuote | null> {
   }
 }
 
+export interface MarketContext {
+  tenYearYield: number; // ^TNX
+  vix: number; // ^VIX
+  sp500ChangePct: number; // ^GSPC
+  nasdaqChangePct: number; // ^IXIC
+  dowChangePct: number; // ^DJI
+}
+
+/** Free macro snapshot from Yahoo index quotes — no API key needed. */
+export async function yahooMarketContext(): Promise<MarketContext | null> {
+  try {
+    const res = await yf.quote(["^TNX", "^VIX", "^GSPC", "^IXIC", "^DJI"]);
+    const arr = Array.isArray(res) ? res : [res];
+    const m = new Map(arr.map((r: any) => [r.symbol, r]));
+    const px = (s: string) => m.get(s)?.regularMarketPrice || 0;
+    const chg = (s: string) => m.get(s)?.regularMarketChangePercent || 0;
+    return {
+      tenYearYield: px("^TNX"),
+      vix: px("^VIX"),
+      sp500ChangePct: chg("^GSPC"),
+      nasdaqChangePct: chg("^IXIC"),
+      dowChangePct: chg("^DJI"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface YahooFundamentals {
+  recommendationKey: string;
+  targetMeanPrice: number;
+  profitMargin: number;
+  returnOnEquity: number;
+  revenueGrowth: number;
+  earningsGrowth: number;
+  debtToEquity: number;
+  pegRatio: number;
+  beta: number;
+  shortPercentOfFloat: number;
+  analystTrend: {
+    strongBuy: number;
+    buy: number;
+    hold: number;
+    sell: number;
+    strongSell: number;
+  } | null;
+}
+
+/** Deep fundamentals + analyst trend from Yahoo quoteSummary — free, keyless. */
+export async function yahooFundamentals(
+  symbol: string
+): Promise<YahooFundamentals | null> {
+  try {
+    const qs: any = await yf.quoteSummary(symbol, {
+      modules: ["financialData", "defaultKeyStatistics", "recommendationTrend"],
+    });
+    const f = qs.financialData || {};
+    const k = qs.defaultKeyStatistics || {};
+    const rt = qs.recommendationTrend?.trend?.[0];
+    return {
+      recommendationKey: f.recommendationKey || "",
+      targetMeanPrice: f.targetMeanPrice || 0,
+      profitMargin: f.profitMargins || 0,
+      returnOnEquity: f.returnOnEquity || 0,
+      revenueGrowth: f.revenueGrowth || 0,
+      earningsGrowth: f.earningsGrowth || 0,
+      debtToEquity: f.debtToEquity || 0,
+      pegRatio: k.pegRatio || 0,
+      beta: k.beta || 0,
+      shortPercentOfFloat: k.shortPercentOfFloat || 0,
+      analystTrend: rt
+        ? {
+            strongBuy: rt.strongBuy || 0,
+            buy: rt.buy || 0,
+            hold: rt.hold || 0,
+            sell: rt.sell || 0,
+            strongSell: rt.strongSell || 0,
+          }
+        : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Historical daily closes, returned NEWEST-first to match the FMP convention
  * the rest of the app expects.

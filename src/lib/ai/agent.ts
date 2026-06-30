@@ -7,10 +7,12 @@ import {
 } from "@/lib/ingestion/market-data";
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { getEcosystemMap } from "@/lib/ingestion/ecosystem";
+import { yahooFundamentals, yahooMarketContext } from "@/lib/ingestion/yahoo";
 import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const FMP_KEY = process.env.FMP_API_KEY || "";
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
 // Primary model + fallback, mirroring the rest of the app.
 const MODELS = GEMINI_MODELS;
@@ -339,6 +341,61 @@ const TOOLS: AgentTool[] = [
       };
     },
   },
+  {
+    declaration: {
+      name: "get_fundamentals",
+      description:
+        "Deep fundamentals & financial health: profit margin, ROE, revenue/earnings growth, debt-to-equity, PEG, beta, short interest, analyst price target, and the full analyst buy/hold/sell trend. Use for valuation/quality questions.",
+      parameters: { type: "object", properties: SYMBOL_PARAM, required: ["symbol"] },
+    },
+    execute: async ({ symbol }) => {
+      const f = await yahooFundamentals(String(symbol).toUpperCase());
+      if (!f) return { found: false };
+      return { found: true, ...f };
+    },
+  },
+  {
+    declaration: {
+      name: "get_market_context",
+      description:
+        "Current macro backdrop: 10-year Treasury yield, VIX (volatility/risk regime), and S&P 500 / Nasdaq / Dow daily moves. Use to frame risk appetite and sector tilt.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+    execute: async () => {
+      const m = await yahooMarketContext();
+      return m ? { found: true, ...m } : { found: false };
+    },
+  },
+  {
+    declaration: {
+      name: "get_social_sentiment",
+      description:
+        "Retail/social sentiment for a ticker — Reddit and X (Twitter) mention volume and positive/negative scores over recent days.",
+      parameters: { type: "object", properties: SYMBOL_PARAM, required: ["symbol"] },
+    },
+    execute: async ({ symbol }) => {
+      if (!FINNHUB_KEY) return { found: false };
+      try {
+        const res = await fetch(
+          `https://finnhub.io/api/v1/stock/social-sentiment?symbol=${String(symbol).toUpperCase()}&token=${FINNHUB_KEY}`
+        );
+        if (!res.ok) return { found: false };
+        const d = await res.json();
+        const reddit = d.reddit || [];
+        const twitter = d.twitter || [];
+        const sum = (arr: any[], k: string) =>
+          arr.reduce((s, x) => s + (x[k] || 0), 0);
+        if (reddit.length === 0 && twitter.length === 0) return { found: false };
+        return {
+          found: true,
+          reddit: { mentions: sum(reddit, "mention"), positiveScore: sum(reddit, "positiveScore"), negativeScore: sum(reddit, "negativeScore") },
+          twitter: { mentions: sum(twitter, "mention"), positiveScore: sum(twitter, "positiveScore"), negativeScore: sum(twitter, "negativeScore") },
+        };
+      } catch {
+        return { found: false };
+      }
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map((t) => [t.declaration.name, t]));
@@ -530,4 +587,7 @@ export const TOOL_LABELS: Record<string, string> = {
   get_insider_trades: "insider trades",
   get_catalyst_signal: "Catalyst signal",
   get_ecosystem: "ecosystem map",
+  get_fundamentals: "fundamentals",
+  get_market_context: "market context",
+  get_social_sentiment: "social sentiment",
 };

@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { sendDailyPicksDigest } from "@/lib/email";
 import { GEMINI_MODELS } from "@/lib/ai/models";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
-import { yahooBatchQuotes } from "@/lib/ingestion/yahoo";
+import { yahooBatchQuotes, yahooMarketContext, type MarketContext } from "@/lib/ingestion/yahoo";
 import { saveAISnapshot } from "@/lib/ai/history";
 
 export const dynamic = "force-dynamic";
@@ -199,7 +199,14 @@ function buildStockData(snapshots: StockSnapshot[]): string {
   }).join("\n");
 }
 
-function buildShortTermPrompt(stockData: string, count: number, today: string, phase: string): string {
+function buildMacro(m: MarketContext | null): string {
+  if (!m) return "";
+  const regime =
+    m.vix > 25 ? "elevated — risk-off" : m.vix < 15 ? "low — risk-on" : "moderate";
+  return `MARKET CONTEXT: 10Y Treasury ${m.tenYearYield.toFixed(2)}%, VIX ${m.vix.toFixed(1)} (${regime}), S&P ${m.sp500ChangePct >= 0 ? "+" : ""}${m.sp500ChangePct.toFixed(2)}%, Nasdaq ${m.nasdaqChangePct >= 0 ? "+" : ""}${m.nasdaqChangePct.toFixed(2)}%, Dow ${m.dowChangePct >= 0 ? "+" : ""}${m.dowChangePct.toFixed(2)}%. Factor this regime into risk appetite and sector tilt.\n\n`;
+}
+
+function buildShortTermPrompt(stockData: string, count: number, today: string, phase: string, macro: string): string {
   const phaseHint = phase === "pre-market"
     ? "Focus on pre-market movers and gap-up/gap-down setups."
     : phase === "after-hours"
@@ -209,7 +216,7 @@ function buildShortTermPrompt(stockData: string, count: number, today: string, p
   return `You are an elite stock analyst. Today is ${today} (${phase}). ${phaseHint}
 Below are REAL live prices and data for US stocks.
 
-LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell):
+${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell):
 ${stockData}
 
 TASK: Select exactly 10 stocks for SHORT-TERM trades (1–4 weeks).
@@ -226,7 +233,7 @@ RULES:
 Return a JSON array of exactly 10 objects with: "symbol", "companyName", "action" (BUY/SELL), "entryPrice", "targetPrice", "stopLoss", "timeframe" (always "short-term"), "conviction" (50-95), "rationale" (2 sentences), "catalysts" (array of 2-3). Return ONLY the JSON array.`;
 }
 
-function buildLongTermPrompt(stockData: string, count: number, today: string, excludeSymbols: string[]): string {
+function buildLongTermPrompt(stockData: string, count: number, today: string, excludeSymbols: string[], macro: string): string {
   const excludeNote = excludeSymbols.length > 0
     ? `\nDO NOT pick these symbols (already in short-term picks): ${excludeSymbols.join(", ")}`
     : "";
@@ -234,7 +241,7 @@ function buildLongTermPrompt(stockData: string, count: number, today: string, ex
   return `You are an elite stock analyst focused on VALUE and GROWTH investing. Today is ${today}.
 Below are REAL live prices and data for US stocks.
 
-LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell):
+${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell):
 ${stockData}
 
 TASK: Select exactly 10 stocks for LONG-TERM positions (1–6 months).
@@ -397,6 +404,9 @@ export async function GET(request: Request) {
 
     const phase = getMarketPhase();
     const stockData = buildStockData(snapshots);
+    // Free macro snapshot (rates, VIX, index trend) → the AI factors the regime
+    // into its risk appetite and sector tilt. One Yahoo call, no key.
+    const macro = buildMacro(await yahooMarketContext());
 
     let geminiErr = "";
     async function callGemini(prompt: string): Promise<Pick[]> {
@@ -444,8 +454,8 @@ export async function GET(request: Request) {
     }
 
     console.log("[picks] Generating short-term + long-term in parallel...");
-    const shortPrompt = buildShortTermPrompt(stockData, snapshots.length, tradingDate, phase);
-    const longPrompt = buildLongTermPrompt(stockData, snapshots.length, tradingDate, []);
+    const shortPrompt = buildShortTermPrompt(stockData, snapshots.length, tradingDate, phase, macro);
+    const longPrompt = buildLongTermPrompt(stockData, snapshots.length, tradingDate, [], macro);
 
     const [shortPicks, longPicks] = await Promise.all([
       callGemini(shortPrompt),

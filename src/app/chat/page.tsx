@@ -21,6 +21,9 @@ const TOOL_LABELS: Record<string, string> = {
   get_insider_trades: "insider trades",
   get_catalyst_signal: "Catalyst signal",
   get_ecosystem: "ecosystem map",
+  get_fundamentals: "fundamentals",
+  get_market_context: "market context",
+  get_social_sentiment: "social sentiment",
 };
 
 export default function ChatPage() {
