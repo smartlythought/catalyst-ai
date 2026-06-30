@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/picks/daily?refresh=1",
+      "schedule": "30 12 * * 1-5"
+    },
+    {
       "path": "/api/ingest/universe",
       "schedule": "0 10 * * 1"
     }
