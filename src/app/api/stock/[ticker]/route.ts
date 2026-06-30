@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getQuote, getCompanyProfile, getAnalystRatings, getPriceTarget, getHistoricalPrices } from "@/lib/ingestion/market-data";
+import { yahooFundamentals } from "@/lib/ingestion/yahoo";
 import { getRecentForm4, getRecent8K, tickerToCik } from "@/lib/ingestion/sec-edgar";
 
 const CIK_CACHE: Record<string, string> = {
@@ -43,13 +44,14 @@ export async function GET(
   const range = request.nextUrl.searchParams.get("range") || "1M";
   const days = RANGE_TO_DAYS[range] || 30;
 
-  const [quote, profile, analysts, priceTarget, prices, cik] =
+  const [quote, profile, analysts, priceTarget, prices, fundamentals, cik] =
     await Promise.all([
       getQuote(symbol).catch(() => null),
       getCompanyProfile(symbol).catch(() => null),
       getAnalystRatings(symbol).catch(() => null),
       getPriceTarget(symbol).catch(() => null),
       getHistoricalPrices(symbol, days).catch(() => []),
+      yahooFundamentals(symbol).catch(() => null),
       resolveCik(symbol),
     ]);
 
@@ -67,6 +69,15 @@ export async function GET(
     analysts,
     priceTarget,
     prices,
+    fundamentals: fundamentals
+      ? {
+          analystConsensus: fundamentals.recommendationKey || undefined,
+          peg: fundamentals.pegRatio || undefined,
+          priceTarget: fundamentals.targetMeanPrice || undefined,
+          roe: fundamentals.returnOnEquity || undefined,
+          revGrowth: fundamentals.revenueGrowth || undefined,
+        }
+      : null,
     insiderTrades: form4s.slice(0, 10),
     filings: filings8k.slice(0, 5),
   });

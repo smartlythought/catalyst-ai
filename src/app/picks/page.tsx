@@ -5,6 +5,7 @@ import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
 import { ConvictionMeter } from "@/components/conviction-meter";
+import { FundamentalChips } from "@/components/fundamental-chips";
 
 interface Pick {
   symbol: string;
@@ -25,40 +26,6 @@ interface Pick {
     roe?: number;
     revGrowth?: number;
   };
-}
-
-function consensusLabel(key?: string): string | null {
-  if (!key) return null;
-  return key
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
-function FundamentalChips({ f, price }: { f: NonNullable<Pick["fundamentals"]>; price: number }) {
-  const chips: string[] = [];
-  const consensus = consensusLabel(f.analystConsensus);
-  if (consensus) chips.push(consensus);
-  if (f.priceTarget && price > 0) {
-    const up = ((f.priceTarget - price) / price) * 100;
-    chips.push(`PT $${f.priceTarget.toFixed(0)} (${up >= 0 ? "+" : ""}${up.toFixed(0)}%)`);
-  }
-  if (f.peg) chips.push(`PEG ${f.peg.toFixed(2)}`);
-  if (f.roe) chips.push(`ROE ${(f.roe * 100).toFixed(0)}%`);
-  if (f.revGrowth) chips.push(`Rev ${f.revGrowth >= 0 ? "+" : ""}${(f.revGrowth * 100).toFixed(0)}%`);
-  if (chips.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {chips.map((c) => (
-        <span
-          key={c}
-          className="font-mono text-[10px] font-medium tracking-[0.3px] text-text-secondary px-2 py-0.5 rounded-md bg-accent-brand/10 border border-accent-brand/20"
-        >
-          {c}
-        </span>
-      ))}
-    </div>
-  );
 }
 
 interface PicksResponse {

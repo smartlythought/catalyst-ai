@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
+import { FundamentalChips } from "@/components/fundamental-chips";
 
 interface DayHistory {
   date: string;
@@ -92,29 +93,34 @@ export default function HistoryPage() {
                       <div className="font-mono text-[10px] text-text-faint uppercase tracking-[1px] mb-2">
                         Daily Picks
                       </div>
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex flex-col gap-2.5">
                         {picks.map((p, i) => (
                           <Link
                             key={`${p.symbol}-${i}`}
                             href={`/stock/${p.symbol}`}
-                            className="flex items-center gap-2 text-[12px]"
+                            className="flex flex-col gap-1"
                           >
-                            <span
-                              className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded"
-                              style={{
-                                color: p.action === "SELL" ? "var(--neg-red-bright)" : "var(--pos-green-bright)",
-                                backgroundColor: p.action === "SELL" ? "rgba(234,57,67,0.12)" : "rgba(22,199,132,0.12)",
-                              }}
-                            >
-                              {p.action}
-                            </span>
-                            <span className="font-mono font-bold w-[52px]">{p.symbol}</span>
-                            <span className="text-text-faint font-mono">
-                              ${p.entryPrice?.toFixed?.(2)} → ${p.targetPrice?.toFixed?.(2)} (SL ${p.stopLoss?.toFixed?.(2)})
-                            </span>
-                            <span className="ml-auto text-[9px] font-mono text-text-faint uppercase">
-                              {p.timeframe === "short-term" ? "S" : "L"}
-                            </span>
+                            <div className="flex items-center gap-2 text-[12px]">
+                              <span
+                                className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                style={{
+                                  color: p.action === "SELL" ? "var(--neg-red-bright)" : "var(--pos-green-bright)",
+                                  backgroundColor: p.action === "SELL" ? "rgba(234,57,67,0.12)" : "rgba(22,199,132,0.12)",
+                                }}
+                              >
+                                {p.action}
+                              </span>
+                              <span className="font-mono font-bold w-[52px]">{p.symbol}</span>
+                              <span className="text-text-faint font-mono">
+                                ${p.entryPrice?.toFixed?.(2)} → ${p.targetPrice?.toFixed?.(2)} (SL ${p.stopLoss?.toFixed?.(2)})
+                              </span>
+                              <span className="ml-auto text-[9px] font-mono text-text-faint uppercase">
+                                {p.timeframe === "short-term" ? "S" : "L"}
+                              </span>
+                            </div>
+                            {p.fundamentals && (
+                              <FundamentalChips f={p.fundamentals} price={p.currentPrice ?? p.entryPrice} size="xs" />
+                            )}
                           </Link>
                         ))}
                       </div>

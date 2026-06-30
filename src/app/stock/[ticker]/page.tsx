@@ -8,6 +8,7 @@ import { Disclaimer } from "@/components/disclaimer";
 import { FinancialsChart } from "@/components/financials-chart";
 import { useRealtimePrice } from "@/hooks/use-realtime-price";
 import { USER_AI_ENABLED } from "@/lib/ai/config";
+import { FundamentalChips, type Fundamentals } from "@/components/fundamental-chips";
 
 interface NewsItem {
   title: string;
@@ -63,6 +64,7 @@ interface StockData {
   prices: { date: string; close: number; volume: number }[];
   insiderTrades: any[];
   filings: any[];
+  fundamentals?: Fundamentals | null;
 }
 
 export default function StockDeepDivePage({
@@ -303,6 +305,13 @@ export default function StockDeepDivePage({
             </div>
           );
         })()}
+
+        {/* Deep fundamentals chips (analyst consensus, PT, PEG, ROE) */}
+        {data?.fundamentals && (
+          <div className="mt-3">
+            <FundamentalChips f={data.fundamentals} price={price} />
+          </div>
+        )}
       </header>
 
       {/* Price chart */}
