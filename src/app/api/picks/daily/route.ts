@@ -26,6 +26,7 @@ interface Pick {
   rationale: string;
   catalysts: string[];
   currentPrice?: number;
+  currentChangePct?: number;
   // Deep-dive fundamentals attached in pass 2 (for display).
   fundamentals?: {
     analystConsensus?: string;
@@ -264,14 +265,15 @@ Return a JSON array of exactly 10 objects with: "symbol", "companyName", "action
 }
 
 function validatePicks(picks: Pick[], snapshots: StockSnapshot[]): Pick[] {
-  const priceMap = new Map(snapshots.map(s => [s.symbol, s.price]));
+  const snapMap = new Map(snapshots.map(s => [s.symbol, s]));
   const seen = new Set<string>();
 
   return picks.filter(p => {
     if (seen.has(p.symbol)) return false;
     seen.add(p.symbol);
 
-    const realPrice = priceMap.get(p.symbol);
+    const snap = snapMap.get(p.symbol);
+    const realPrice = snap?.price;
     if (!realPrice) return false;
 
     const isLong = p.timeframe === "long-term";
@@ -293,6 +295,7 @@ function validatePicks(picks: Pick[], snapshots: StockSnapshot[]): Pick[] {
     }
 
     p.currentPrice = realPrice;
+    p.currentChangePct = snap?.changePct ?? 0;
     return true;
   });
 }

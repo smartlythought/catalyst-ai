@@ -32,11 +32,31 @@ export interface YahooQuote {
 }
 
 function normalize(r: any): YahooQuote {
+  // Session-aware price: during pre-market / after-hours use the extended-hours
+  // price so entries reflect where the stock will actually open/trade, not
+  // yesterday's close. Falls back to regular price when extended data is absent
+  // (e.g. indices) or during the regular session.
+  const state = r.marketState;
+  let price = r.regularMarketPrice || 0;
+  let change = r.regularMarketChange || 0;
+  let changePercent = r.regularMarketChangePercent || 0;
+  if (state === "PRE" && r.preMarketPrice > 0) {
+    price = r.preMarketPrice;
+    change = r.preMarketChange || 0;
+    changePercent = r.preMarketChangePercent || 0;
+  } else if (
+    (state === "POST" || state === "POSTPOST" || state === "PREPRE") &&
+    r.postMarketPrice > 0
+  ) {
+    price = r.postMarketPrice;
+    change = r.postMarketChange || 0;
+    changePercent = r.postMarketChangePercent || 0;
+  }
   return {
     symbol: r.symbol,
-    price: r.regularMarketPrice || 0,
-    change: r.regularMarketChange || 0,
-    changePercent: r.regularMarketChangePercent || 0,
+    price,
+    change,
+    changePercent,
     marketCap: r.marketCap || 0,
     pe: r.trailingPE || r.forwardPE || 0,
     week52High: r.fiftyTwoWeekHigh || 0,

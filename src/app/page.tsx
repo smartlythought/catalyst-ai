@@ -44,7 +44,7 @@ export default async function HomePage() {
       exchange: "NASDAQ",
       price: p.currentPrice || p.entryPrice,
       change: 0,
-      changePercent: 0,
+      changePercent: p.currentChangePct ?? 0,
       call: p.action === "SELL" ? "REDUCE" : "BUY",
       conviction: p.conviction,
       horizon: p.timeframe === "short-term" ? "1–4 weeks" : "1–6 months",
