@@ -111,6 +111,8 @@ async function buildSnapshots(universe: string[]): Promise<StockSnapshot[]> {
   for (const sym of symbols) {
     const q = quotes.get(sym);
     if (!q || !(q.price > 0)) continue;
+    // Real stocks only — exclude leveraged/inverse ETFs & other instruments.
+    if (q.quoteType && q.quoteType !== "EQUITY") continue;
     snapshots.push({
       symbol: sym,
       name: q.name || sym,

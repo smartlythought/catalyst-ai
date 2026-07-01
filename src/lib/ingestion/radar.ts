@@ -48,6 +48,9 @@ export async function scanRadar(force = false): Promise<RadarResult> {
   for (const [sym, q] of quotes) {
     if (!(q.price > 0)) continue;
     const isHeld = held.has(sym);
+    // Real stocks only — no leveraged/inverse/single-stock ETFs or ETNs, which
+    // always show violent moves and would flood the radar with noise.
+    if (q.quoteType && q.quoteType !== "EQUITY") continue;
     // Quality floor: skip sub-$1B unless it's something we hold.
     if (!isHeld && q.marketCap > 0 && q.marketCap < MIN_CAP) continue;
 

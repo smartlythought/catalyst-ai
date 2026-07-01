@@ -34,6 +34,9 @@ export interface YahooQuote {
   // are flagged as "in play".
   avgVolume3M: number;
   extendedChangePct: number;
+  // "EQUITY" | "ETF" | "INDEX" | ... — used to keep leveraged/inverse ETFs and
+  // other non-stock instruments out of the stock scans.
+  quoteType: string;
 }
 
 function normalize(r: any): YahooQuote {
@@ -85,6 +88,7 @@ function normalize(r: any): YahooQuote {
     analystRating: r.averageAnalystRating || "",
     avgVolume3M: r.averageDailyVolume3Month || r.averageDailyVolume10Day || 0,
     extendedChangePct,
+    quoteType: r.quoteType || "",
   };
 }
 
