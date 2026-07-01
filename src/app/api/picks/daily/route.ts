@@ -181,6 +181,12 @@ async function buildSnapshots(universe: string[]): Promise<StockSnapshot[]> {
 
 const PROMPT_UNIVERSE_CAP = 200;
 
+// Short-term picks are held to a stricter QUALITY bar than long-term: liquid
+// names with a market cap of at least $1B (no small/penny stocks), and a real
+// conviction floor so the list isn't padded with weak filler.
+const SHORT_TERM_MIN_CAP = 1_000_000_000;
+const SHORT_TERM_MIN_CONVICTION = 65;
+
 function snapshotSignals(s: StockSnapshot) {
   return computeUnusualSignals({
     price: s.price,
@@ -265,7 +271,7 @@ RULES:
 1. Entry price within 1-3% of current price — users act TODAY.
 2. BUY target: 5-15% upside. SELL target: 5-15% downside. Stop loss: 3-7%.
 3. Risk:reward at least 2:1.
-4. QUALITY BAR: strongly prefer share price ≥ $5 and BUYs with a bullish-to-neutral analyst consensus (≤2.8). Avoid thin, speculative sub-$5 names UNLESS they show a strong ⚡ signal AND a concrete, nameable catalyst.
+4. QUALITY BAR (hard rule): every pick MUST be a liquid company with market cap ≥ $1B — NO small-cap or penny stocks. Strongly prefer share price ≥ $5 and BUYs with a bullish-to-neutral analyst consensus (≤2.8).
 5. CONVICTION DISCIPLINE: assign 70+ ONLY when catalyst, technicals, and fundamentals align; 85+ is reserved for exceptional setups. Target an average conviction of 75+. Do NOT pad the list with 50-60 filler.
 6. Diversify: at least 4 sectors, max 3 per sector.
 7. Roughly 7-8 BUY, 2-3 SELL.
@@ -599,7 +605,13 @@ export async function GET(request: Request) {
     }
 
     const phase = getMarketPhase();
-    const stockData = buildStockData(snapshots, priority);
+    // Short-term draws only from ≥$1B names (plus anything held) — quality over
+    // penny-stock momentum. Long-term keeps the full $300M+ universe.
+    const shortSnapshots = snapshots.filter(
+      (s) => heldUpper.has(s.symbol.toUpperCase()) || s.marketCap >= SHORT_TERM_MIN_CAP
+    );
+    const stockDataShort = buildStockData(shortSnapshots, priority);
+    const stockDataAll = buildStockData(snapshots, priority);
     // Free macro snapshot (yield curve, VIX, USD, oil, gold, index trend) →
     // the AI factors the regime into risk appetite and sector tilt. One call.
     const macro = await getMarketContextText();
@@ -650,8 +662,8 @@ export async function GET(request: Request) {
     }
 
     console.log("[picks] Generating short-term + long-term in parallel...");
-    const shortPrompt = buildShortTermPrompt(stockData, snapshots.length, tradingDate, phase, macro);
-    const longPrompt = buildLongTermPrompt(stockData, snapshots.length, tradingDate, [], macro);
+    const shortPrompt = buildShortTermPrompt(stockDataShort, shortSnapshots.length, tradingDate, phase, macro);
+    const longPrompt = buildLongTermPrompt(stockDataAll, snapshots.length, tradingDate, [], macro);
 
     const [shortPicks, longPicks] = await Promise.all([
       callGemini(shortPrompt),
@@ -678,8 +690,21 @@ export async function GET(request: Request) {
     // fail-soft: any error leaves the pass-1 picks untouched.
     const refined = await deepRefinePicks(validated);
 
-    await storePicks(tradingDate, refined, snapshots.length);
-    await saveAISnapshot("picks", refined);
+    // QUALITY BACKSTOP for short-term: enforce the ≥$1B market-cap floor and the
+    // conviction floor even if the model slips a name through. Long-term is
+    // untouched. Held names are always kept.
+    const capMap = new Map(snapshots.map((s) => [s.symbol.toUpperCase(), s.marketCap]));
+    const finalPicks = refined.filter((p) => {
+      if (p.timeframe !== "short-term") return true;
+      if (heldUpper.has(p.symbol.toUpperCase())) return true;
+      const mcap = capMap.get(p.symbol.toUpperCase()) || 0;
+      if (mcap > 0 && mcap < SHORT_TERM_MIN_CAP) return false;
+      if (p.conviction < SHORT_TERM_MIN_CONVICTION) return false;
+      return true;
+    });
+
+    await storePicks(tradingDate, finalPicks, snapshots.length);
+    await saveAISnapshot("picks", finalPicks);
 
     // Fully-automatic PAPER trading: once per day, turn today's short-term,
     // high-conviction (>85%) BUYs into bracket orders after a final AI research
@@ -687,17 +712,17 @@ export async function GET(request: Request) {
     try {
       const alreadyTraded = await getTodayAISnapshot("trades");
       if (!alreadyTraded) {
-        const trade = await autoTradePicks(refined);
+        const trade = await autoTradePicks(finalPicks);
         await saveAISnapshot("trades", trade);
       }
     } catch (e) {
       console.log("[picks] auto-trade skipped:", e);
     }
 
-    sendDailyPicksDigest(refined, tradingDate).catch(() => {});
+    sendDailyPicksDigest(finalPicks, tradingDate).catch(() => {});
 
     return NextResponse.json({
-      picks: refined,
+      picks: finalPicks,
       generatedAt: new Date().toISOString(),
       stocksScanned: snapshots.length,
       disclaimer: "AI-generated recommendations for informational purposes only. Not financial advice.",
