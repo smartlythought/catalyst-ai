@@ -6,6 +6,8 @@ import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { yahooBatchQuotes, getMarketContextText, yahooFundamentals } from "@/lib/ingestion/yahoo";
 import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
 import { autoTradePicks } from "@/lib/trading/autotrade";
+import { buildScanUniverse } from "@/lib/ingestion/universe";
+import { getHeldSymbols } from "@/lib/trading/alpaca";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -62,29 +64,8 @@ interface StockSnapshot {
   analystRating: string;
 }
 
-const SCAN_UNIVERSE = [
-  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","AMD","CRM",
-  "NFLX","ORCL","ADBE","INTC","QCOM","CSCO","TXN","MU","AMAT","LRCX",
-  "JPM","V","MA","BAC","GS","WFC","AXP","BLK","SCHW","MS",
-  "UNH","JNJ","LLY","PFE","ABBV","MRK","TMO","ABT","BMY","AMGN",
-  "XOM","CVX","COP","SLB","EOG","OXY","PSX","VLO","MPC","HAL",
-  "WMT","COST","HD","LOW","TGT","SBUX","MCD","NKE","TJX","BKNG",
-  "PG","KO","PEP","PM","CL","EL","MDLZ","GIS","KHC","STZ",
-  "DIS","CMCSA","T","VZ","TMUS","CHTR","PARA","WBD","SPOT","ROKU",
-  "BA","CAT","DE","GE","HON","RTX","LMT","UNP","UPS","FDX",
-  "PLTR","SNOW","CRWD","NET","DDOG","ZS","PANW","FTNT","MDB","COIN",
-  "SQ","SHOP","MELI","SE","UBER","LYFT","DASH","ABNB","RBLX","U",
-  "ARM","SMCI","DELL","HPE","IBM","NOW","WDAY","TEAM","HUBS","VEEV",
-  // Growth / small & mid-caps — broadens beyond mega-caps so picks aren't all
-  // the same household names. Includes high-interest momentum & space/defense/
-  // quantum/semi names.
-  "RKLB","ASTS","LUNR","RDW","KTOS","AVAV","ACHR","JOBY","BBAI","SOUN",
-  "QUBT","QBTS","RGTI","IONQ","NVTS","INDI","CRDO","ALAB","NBIS","RKLB",
-  "FN","COHR","LITE","AMBA","SITM","POWI","MPWR","ON","WOLF","ALGM",
-  "AFRM","SOFI","UPST","HOOD","NU","TOST","BILL","GTLB","S","FROG",
-  "OKLO","SMR","CEG","VST","TLN","GEV","FSLR","ENPH","RUN","NEE",
-  "CVNA","DKNG","RBLX","PINS","SNAP","RDDT","APP","TTD","ZETA","CRNC",
-];
+// The scan universe is now built dynamically in lib/ingestion/universe.ts
+// (curated base ∪ today's movers ∪ Alpaca holdings).
 
 /** FMP batch-quote fallback for symbols Yahoo didn't return. */
 async function fetchFMPBatch(symbols: string[]): Promise<Map<string, any>> {
@@ -112,10 +93,10 @@ async function fetchFMPBatch(symbols: string[]): Promise<Map<string, any>> {
   return map;
 }
 
-async function buildSnapshots(): Promise<StockSnapshot[]> {
+async function buildSnapshots(universe: string[]): Promise<StockSnapshot[]> {
   // Primary: Yahoo batch quotes — free, keyless, broad. But Yahoo can rate-
   // limit datacenter IPs, so fall back to FMP batch-quote for anything missing.
-  const symbols = Array.from(new Set(SCAN_UNIVERSE));
+  const symbols = Array.from(new Set(universe));
   const quotes = await yahooBatchQuotes(symbols);
 
   const snapshots: StockSnapshot[] = [];
@@ -186,9 +167,27 @@ async function buildSnapshots(): Promise<StockSnapshot[]> {
   return snapshots;
 }
 
-function buildStockData(snapshots: StockSnapshot[]): string {
-  const shuffled = [...snapshots].sort(() => Math.random() - 0.5);
-  return shuffled.map(s => {
+const PROMPT_UNIVERSE_CAP = 200;
+
+function buildStockData(snapshots: StockSnapshot[], priority: Set<string>): string {
+  // Keep the prompt focused: always include priority names (holdings + today's
+  // movers), then the biggest movers by |%|, then a random rotation of the
+  // rest — capped so the prompt stays fast/cheap while covering what matters.
+  const isPriority = (s: StockSnapshot) => priority.has(s.symbol.toUpperCase());
+  const prio = snapshots.filter(isPriority);
+  const others = snapshots.filter((s) => !isPriority(s));
+  const byMove = [...others].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+  const topMovers = byMove.slice(0, 60);
+  const rest = byMove.slice(60).sort(() => Math.random() - 0.5);
+  const seen = new Set<string>();
+  const selected: StockSnapshot[] = [];
+  for (const s of [...prio, ...topMovers, ...rest]) {
+    if (seen.has(s.symbol)) continue;
+    seen.add(s.symbol);
+    selected.push(s);
+    if (selected.length >= PROMPT_UNIVERSE_CAP) break;
+  }
+  return selected.map(s => {
     let line = `${s.symbol} | $${s.price.toFixed(2)} | ${s.changePct >= 0 ? "+" : ""}${s.changePct.toFixed(2)}%`;
     if (s.pe > 0) line += ` | PE:${s.pe.toFixed(1)}`;
     if (s.forwardPE > 0) line += ` | FwdPE:${s.forwardPE.toFixed(1)}`;
@@ -527,21 +526,25 @@ export async function GET(request: Request) {
   }
 
   try {
-    console.log("[picks] Building snapshots...");
-    const snapshots = await buildSnapshots();
+    console.log("[picks] Building dynamic universe + snapshots...");
+    // Dynamic universe = curated base ∪ today's movers ∪ current holdings.
+    const held = await getHeldSymbols().catch(() => new Set<string>());
+    const { symbols, priority } = await buildScanUniverse([...held]);
+    const snapshots = await buildSnapshots(symbols);
+    console.log(`[picks] Universe ${symbols.length}, snapshots ${snapshots.length}, held ${held.size}`);
 
     if (snapshots.length < 10) {
       return NextResponse.json(
         {
           error: "Insufficient market data — try again shortly",
-          debug: { snapshots: snapshots.length },
+          debug: { universe: symbols.length, snapshots: snapshots.length },
         },
         { status: 502 }
       );
     }
 
     const phase = getMarketPhase();
-    const stockData = buildStockData(snapshots);
+    const stockData = buildStockData(snapshots, priority);
     // Free macro snapshot (yield curve, VIX, USD, oil, gold, index trend) →
     // the AI factors the regime into risk appetite and sector tilt. One call.
     const macro = await getMarketContextText();
