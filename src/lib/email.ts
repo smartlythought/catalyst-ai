@@ -269,3 +269,80 @@ export async function dispatchEmailAlerts(signal: SignalMessage): Promise<number
 
   return sent;
 }
+
+interface RadarDigestHit {
+  symbol: string;
+  price: number;
+  changePct: number;
+  chips: string[];
+}
+
+/**
+ * Intraday Momentum Radar digest — a compact "what's breaking now" email sent
+ * by the midday cron. Fail-soft: no Resend key or no subscribers → returns 0.
+ */
+export async function sendRadarDigest(hits: RadarDigestHit[]): Promise<number> {
+  const resend = getResend();
+  if (!resend || !hits.length) return 0;
+
+  const supabase = createServiceClient();
+  const { data: subscribers } = await supabase
+    .from("user_alerts")
+    .select("user_id")
+    .eq("email_enabled", true);
+  if (!subscribers?.length) return 0;
+
+  const rows = hits
+    .slice(0, 12)
+    .map((h) => {
+      const col = h.changePct >= 0 ? "#16C784" : "#EA3943";
+      const flags = h.chips
+        .map(
+          (c) =>
+            `<span style="display:inline-block;padding:2px 8px;margin:0 4px 4px 0;border-radius:6px;font-size:11px;color:#E8743B;background:#E8743B1A;font-family:monospace">⚡ ${c}</span>`
+        )
+        .join("");
+      return `<tr>
+        <td style="padding:10px 0;border-bottom:1px solid #1F2937">
+          <a href="https://catalyst.claudeo.ai/stock/${h.symbol}" style="font-weight:800;color:white;font-size:16px;text-decoration:none;font-family:monospace">${h.symbol}</a>
+          <div style="margin-top:4px">${flags}</div>
+        </td>
+        <td style="padding:10px 0;border-bottom:1px solid #1F2937;text-align:right">
+          <div style="font-weight:700;color:white;font-family:monospace">$${h.price.toFixed(2)}</div>
+          <div style="font-weight:700;color:${col};font-family:monospace;font-size:13px">${h.changePct >= 0 ? "+" : ""}${h.changePct.toFixed(2)}%</div>
+        </td>
+      </tr>`;
+    })
+    .join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0A0E14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <div style="max-width:480px;margin:0 auto;padding:24px 16px">
+    <div style="text-align:center;margin-bottom:20px">
+      <span style="font-size:20px;font-weight:800;color:#E8743B;letter-spacing:-0.5px">Catalyst</span>
+      <div style="font-size:12px;color:#9CA3AF;margin-top:4px">⚡ Momentum Radar — what's breaking now</div>
+    </div>
+    <div style="background:#111827;border:1px solid #1F2937;border-radius:16px;padding:20px">
+      <table style="width:100%;border-collapse:collapse">${rows}</table>
+    </div>
+    <div style="text-align:center;padding:16px 0">
+      <a href="https://catalyst.claudeo.ai/radar" style="display:inline-block;padding:12px 32px;background:#E8743B;color:white;font-weight:700;font-size:14px;border-radius:10px;text-decoration:none">Open Radar →</a>
+    </div>
+    <p style="text-align:center;color:#4B5563;font-size:10px;margin-top:16px;font-family:monospace">Catalyst AI — Not financial advice. Unusual activity ≠ a guaranteed move.</p>
+  </div>
+</body></html>`;
+
+  const subject = `⚡ Radar: ${hits.length} stocks in play — ${hits[0].symbol} ${hits[0].changePct >= 0 ? "+" : ""}${hits[0].changePct.toFixed(1)}%`;
+
+  let sent = 0;
+  for (const sub of subscribers) {
+    try {
+      const { data: user } = await supabase.auth.admin.getUserById(sub.user_id);
+      const email = user?.user?.email;
+      if (!email) continue;
+      const { error } = await resend.emails.send({ from: FROM_EMAIL, to: email, subject, html });
+      if (!error) sent++;
+    } catch {}
+  }
+  return sent;
+}

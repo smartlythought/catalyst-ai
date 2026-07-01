@@ -38,6 +38,12 @@ const JOBS: JobDef[] = [
     desc: "Weekly top short & long term summary",
     est: "~1 call",
   },
+  {
+    key: "radar",
+    label: "Run Momentum Radar",
+    desc: "Live scan for volume surges, gaps & breakouts (no AI, free)",
+    est: "0 calls",
+  },
 ];
 
 export default function AdminPage() {

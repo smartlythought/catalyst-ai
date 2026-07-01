@@ -163,6 +163,13 @@ export default async function HomePage() {
               <div className="text-[9px] text-text-faint font-mono uppercase tracking-[0.5px] mb-0.5">New</div>
               <div className="text-[13px] font-bold text-pos-green">IPOs</div>
             </Link>
+            <Link
+              href="/radar"
+              className="flex-1 bg-surface-1/60 backdrop-blur-sm border border-border-1/50 rounded-[12px] px-3 py-2 text-center active:opacity-80 transition-opacity"
+            >
+              <div className="text-[9px] text-text-faint font-mono uppercase tracking-[0.5px] mb-0.5">Live</div>
+              <div className="text-[13px] font-bold text-accent-brand">⚡ Radar</div>
+            </Link>
           </div>
         </div>
 
