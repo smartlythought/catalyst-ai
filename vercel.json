@@ -7,6 +7,10 @@
     {
       "path": "/api/ingest/universe",
       "schedule": "0 10 * * 1"
+    },
+    {
+      "path": "/api/market/radar?refresh=1&notify=1",
+      "schedule": "30 15 * * 1-5"
     }
   ]
 }
