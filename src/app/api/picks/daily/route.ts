@@ -257,19 +257,20 @@ ${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, 
 ⚡UNUSUAL-ACTIVITY FLAGS (early "in play" tells that PRECEDE sudden spikes): Vol:Nx=today's volume is N× the 3-month average (accumulation/distribution — smart money positioning ahead of a catalyst); Gap:±%=pre-market/overnight gap on news; NearHigh=within 3% of the 52-week high; Breakout=near-high on heavy volume:
 ${stockData}
 
-TASK: Select exactly 10 stocks for SHORT-TERM trades (1–4 weeks).
-Focus on momentum, swing trades, catalysts, earnings plays, sector rotation. Use the analyst consensus rating and 52-week trend to confirm direction.
-PRIORITIZE stocks flashing ⚡ unusual-activity flags — a volume surge, a gap, or a breakout is the earliest sign a stock is "in play" and about to move; these make the best short-term momentum/catalyst entries. When you pick one, name the flag in the rationale.
+TASK: Select 8-10 stocks for SHORT-TERM trades (1–4 weeks). QUALITY OVER QUANTITY — a tight list of 8 high-conviction setups beats a padded list of 10. If you can't find 10 you truly believe in, return fewer.
+Focus on LIQUID, established large- and mid-cap names, each with a SPECIFIC near-term driver: an upcoming earnings/product/FDA event, a fresh analyst upgrade, sector rotation, or a clear technical setup (⚡ volume surge / gap / breakout). Use the analyst consensus rating and 52-week trend to confirm direction.
+PRIORITIZE QUALITY names flashing ⚡ unusual-activity flags — a volume surge, gap, or breakout is the earliest sign a stock is "in play"; these make the best short-term entries. When you pick one, name the flag in the rationale.
 
 RULES:
 1. Entry price within 1-3% of current price — users act TODAY.
 2. BUY target: 5-15% upside. SELL target: 5-15% downside. Stop loss: 3-7%.
-3. Risk:reward at least 2:1. Conviction 70+ = high confidence.
-4. Pick from at least 5 different sectors. Max 2 per sector.
-5. Include at least 2 mid-cap stocks (market cap under $50B).
-6. 7-8 BUY, 2-3 SELL.
+3. Risk:reward at least 2:1.
+4. QUALITY BAR: strongly prefer share price ≥ $5 and BUYs with a bullish-to-neutral analyst consensus (≤2.8). Avoid thin, speculative sub-$5 names UNLESS they show a strong ⚡ signal AND a concrete, nameable catalyst.
+5. CONVICTION DISCIPLINE: assign 70+ ONLY when catalyst, technicals, and fundamentals align; 85+ is reserved for exceptional setups. Target an average conviction of 75+. Do NOT pad the list with 50-60 filler.
+6. Diversify: at least 4 sectors, max 3 per sector.
+7. Roughly 7-8 BUY, 2-3 SELL.
 
-Return a JSON array of exactly 10 objects with: "symbol", "companyName", "action" (BUY/SELL), "entryPrice", "targetPrice", "stopLoss", "timeframe" (always "short-term"), "conviction" (50-95), "rationale" (2 sentences), "catalysts" (array of 2-3). Return ONLY the JSON array.`;
+Return a JSON array of 8 to 10 objects with: "symbol", "companyName", "action" (BUY/SELL), "entryPrice", "targetPrice", "stopLoss", "timeframe" (always "short-term"), "conviction" (50-95), "rationale" (2 sentences), "catalysts" (array of 2-3). Return ONLY the JSON array.`;
 }
 
 function buildLongTermPrompt(stockData: string, count: number, today: string, excludeSymbols: string[], macro: string): string {

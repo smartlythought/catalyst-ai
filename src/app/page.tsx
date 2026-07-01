@@ -37,7 +37,12 @@ export default async function HomePage() {
   let signals: Signal[] = [];
 
   if (row?.picks && Array.isArray(row.picks)) {
-    const allSignals = row.picks.map((p: any, i: number) => ({
+    // Home surfaces SHORT-TERM (1–4 week) calls — that's what users act on now.
+    // Long-term picks live on the Daily Picks page. Fall back to all picks only
+    // if (somehow) there are no short-term ones.
+    const shortTerm = row.picks.filter((p: any) => p.timeframe === "short-term");
+    const source = shortTerm.length > 0 ? shortTerm : row.picks;
+    const allSignals = source.map((p: any, i: number) => ({
       id: `pick-${tradingDate}-${i}`,
       ticker: p.symbol,
       company: p.companyName,
@@ -173,7 +178,7 @@ export default async function HomePage() {
           </Link>
         </div>
         <p className="text-[11px] text-text-faint mt-0.5">
-          Top 10 by conviction &middot; Short &amp; long term picks on Daily Picks
+          Short-term &middot; 1&ndash;4 weeks &middot; Long-term picks on Daily Picks
         </p>
 
         {/* Stats strip */}
