@@ -9,6 +9,7 @@ import { autoTradePicks } from "@/lib/trading/autotrade";
 import { buildScanUniverse } from "@/lib/ingestion/universe";
 import { getHeldSymbols } from "@/lib/trading/alpaca";
 import { computeUnusualSignals } from "@/lib/ingestion/signals";
+import { SMALL_CAP } from "@/lib/market-cap";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -570,8 +571,21 @@ export async function GET(request: Request) {
     // Dynamic universe = curated base ∪ today's movers ∪ current holdings.
     const held = await getHeldSymbols().catch(() => new Set<string>());
     const { symbols, priority } = await buildScanUniverse([...held]);
-    const snapshots = await buildSnapshots(symbols);
-    console.log(`[picks] Universe ${symbols.length}, snapshots ${snapshots.length}, held ${held.size}`);
+    const rawSnapshots = await buildSnapshots(symbols);
+
+    // QUALITY FLOOR: drop sub-$300M micro-caps so an unusual-volume spike on a
+    // $0.06 pump-and-dump can't crowd out real catalyst names. Keep anything we
+    // hold, and keep names whose market cap is unknown (missing data ≠ junk).
+    const heldUpper = new Set([...held].map((s) => s.toUpperCase()));
+    const snapshots = rawSnapshots.filter((s) => {
+      if (heldUpper.has(s.symbol.toUpperCase())) return true;
+      // Known market cap → require ≥ $300M. Unknown cap → require ≥ $1 price
+      // (sub-$1 with no cap data is almost always a pump/nano-cap).
+      return s.marketCap > 0 ? s.marketCap >= SMALL_CAP : s.price >= 1;
+    });
+    console.log(
+      `[picks] Universe ${symbols.length}, snapshots ${rawSnapshots.length}→${snapshots.length} after $300M floor, held ${held.size}`
+    );
 
     if (snapshots.length < 10) {
       return NextResponse.json(
