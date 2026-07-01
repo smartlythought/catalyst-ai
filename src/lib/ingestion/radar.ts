@@ -51,8 +51,10 @@ export async function scanRadar(force = false): Promise<RadarResult> {
     // Real stocks only — no leveraged/inverse/single-stock ETFs or ETNs, which
     // always show violent moves and would flood the radar with noise.
     if (q.quoteType && q.quoteType !== "EQUITY") continue;
-    // Quality floor: skip sub-$1B unless it's something we hold.
-    if (!isHeld && q.marketCap > 0 && q.marketCap < MIN_CAP) continue;
+    // Strict quality floor: require a KNOWN market cap ≥ $1B (unless held). This
+    // drops penny/nano names with missing cap data (e.g. rights/when-issued
+    // tickers) that would otherwise slip through on an unknown cap.
+    if (!isHeld && !(q.marketCap >= MIN_CAP)) continue;
 
     const sig = computeUnusualSignals({
       price: q.price,
