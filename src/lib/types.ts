@@ -30,6 +30,8 @@ export interface Signal {
   why: string;
   tags: string[];
   signals: SignalBreakdown[];
+  // Unusual-activity flags (volume surge, gap, breakout) — early "in play" tells.
+  activity?: string[];
   sparkline: number[];
   timestamp: string;
   fundamentals?: {

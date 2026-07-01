@@ -29,6 +29,11 @@ export interface YahooQuote {
   week52ChangePct: number;
   dividendYield: number;
   analystRating: string; // e.g. "1.5 - Strong Buy"
+  // Unusual-activity inputs (free, same quote): 3-month avg volume for a
+  // surge ratio, and the extended-hours gap so pre-market/after-hours pops
+  // are flagged as "in play".
+  avgVolume3M: number;
+  extendedChangePct: number;
 }
 
 function normalize(r: any): YahooQuote {
@@ -40,10 +45,14 @@ function normalize(r: any): YahooQuote {
   let price = r.regularMarketPrice || 0;
   let change = r.regularMarketChange || 0;
   let changePercent = r.regularMarketChangePercent || 0;
+  // Extended-hours gap vs the prior close — the "pre-spike" tell we surface as
+  // a signal. Only meaningful during PRE/POST; 0 in the regular session.
+  let extendedChangePct = 0;
   if (state === "PRE" && r.preMarketPrice > 0) {
     price = r.preMarketPrice;
     change = r.preMarketChange || 0;
     changePercent = r.preMarketChangePercent || 0;
+    extendedChangePct = r.preMarketChangePercent || 0;
   } else if (
     (state === "POST" || state === "POSTPOST" || state === "PREPRE") &&
     r.postMarketPrice > 0
@@ -51,6 +60,7 @@ function normalize(r: any): YahooQuote {
     price = r.postMarketPrice;
     change = r.postMarketChange || 0;
     changePercent = r.postMarketChangePercent || 0;
+    extendedChangePct = r.postMarketChangePercent || 0;
   }
   return {
     symbol: r.symbol,
@@ -73,6 +83,8 @@ function normalize(r: any): YahooQuote {
     week52ChangePct: r.fiftyTwoWeekChangePercent || 0,
     dividendYield: r.dividendYield || 0,
     analystRating: r.averageAnalystRating || "",
+    avgVolume3M: r.averageDailyVolume3Month || r.averageDailyVolume10Day || 0,
+    extendedChangePct,
   };
 }
 

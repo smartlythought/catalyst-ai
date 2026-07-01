@@ -65,6 +65,7 @@ export default async function HomePage() {
       sparkline: [],
       timestamp: row.generated_at || new Date().toISOString(),
       fundamentals: p.fundamentals,
+      activity: p.signals,
     }));
     signals = ([...allSignals].sort((a, b) => b.conviction - a.conviction).slice(0, 10)) as Signal[];
   }

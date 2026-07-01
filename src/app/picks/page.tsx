@@ -19,6 +19,7 @@ interface Pick {
   rationale: string;
   catalysts: string[];
   currentPrice?: number;
+  signals?: string[];
   fundamentals?: {
     analystConsensus?: string;
     peg?: number;
@@ -196,6 +197,21 @@ function PickCard({ pick }: { pick: Pick }) {
         {/* Row 4b: Deep fundamentals (from the two-pass deep-dive) */}
         {pick.fundamentals && (
           <FundamentalChips f={pick.fundamentals} price={pick.currentPrice ?? pick.entryPrice} />
+        )}
+
+        {/* Row 4c: Unusual-activity flags — early "in play" tells */}
+        {pick.signals && pick.signals.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {pick.signals.map((a) => (
+              <span
+                key={a}
+                className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold tracking-[0.3px] uppercase text-accent-brand px-2 py-0.5 rounded-md bg-accent-brand/10 border border-accent-brand/25"
+              >
+                <span aria-hidden>⚡</span>
+                {a}
+              </span>
+            ))}
+          </div>
         )}
 
         {/* Row 5: Catalyst chips */}

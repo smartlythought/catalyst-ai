@@ -8,6 +8,7 @@ import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
 import { autoTradePicks } from "@/lib/trading/autotrade";
 import { buildScanUniverse } from "@/lib/ingestion/universe";
 import { getHeldSymbols } from "@/lib/trading/alpaca";
+import { computeUnusualSignals } from "@/lib/ingestion/signals";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -29,6 +30,9 @@ interface Pick {
   catalysts: string[];
   currentPrice?: number;
   currentChangePct?: number;
+  // Unusual-activity flags from the scan (volume surge, gap, breakout) — the
+  // early "in play" tells that precede sudden spikes. Persisted for display.
+  signals?: string[];
   // Deep-dive fundamentals attached in pass 2 (for display).
   fundamentals?: {
     analystConsensus?: string;
@@ -62,6 +66,9 @@ interface StockSnapshot {
   week52ChangePct: number;
   dividendYield: number;
   analystRating: string;
+  // Unusual-activity inputs.
+  avgVolume3M: number;
+  extendedChangePct: number;
 }
 
 // The scan universe is now built dynamically in lib/ingestion/universe.ts
@@ -125,6 +132,8 @@ async function buildSnapshots(universe: string[]): Promise<StockSnapshot[]> {
       week52ChangePct: q.week52ChangePct,
       dividendYield: q.dividendYield,
       analystRating: q.analystRating,
+      avgVolume3M: q.avgVolume3M,
+      extendedChangePct: q.extendedChangePct,
     });
   }
   console.log(`[picks] Yahoo snapshots: ${snapshots.length}/${symbols.length}`);
@@ -159,6 +168,8 @@ async function buildSnapshots(universe: string[]): Promise<StockSnapshot[]> {
         week52ChangePct: 0,
         dividendYield: 0,
         analystRating: "",
+        avgVolume3M: q.avgVolume ?? 0,
+        extendedChangePct: 0,
       });
     }
     console.log(`[picks] After FMP backfill: ${snapshots.length}/${symbols.length}`);
@@ -169,16 +180,35 @@ async function buildSnapshots(universe: string[]): Promise<StockSnapshot[]> {
 
 const PROMPT_UNIVERSE_CAP = 200;
 
+function snapshotSignals(s: StockSnapshot) {
+  return computeUnusualSignals({
+    price: s.price,
+    changePct: s.changePct,
+    volume: s.volume,
+    avgVolume3M: s.avgVolume3M,
+    week52High: s.week52High,
+    week52Low: s.week52Low,
+    extendedChangePct: s.extendedChangePct,
+  });
+}
+
 function buildStockData(snapshots: StockSnapshot[], priority: Set<string>): string {
   // Keep the prompt focused: always include priority names (holdings + today's
-  // movers), then the biggest movers by |%|, then a random rotation of the
+  // movers), then the stocks showing the most unusual activity ("in play" —
+  // volume surge / gap / breakout / big move), then a random rotation of the
   // rest — capped so the prompt stays fast/cheap while covering what matters.
   const isPriority = (s: StockSnapshot) => priority.has(s.symbol.toUpperCase());
+  // Precompute signals once (avoid recomputing inside the sort comparator).
+  const sigMap = new Map(snapshots.map((s) => [s.symbol, snapshotSignals(s)]));
+  const heatOf = (s: StockSnapshot) => sigMap.get(s.symbol)?.heat ?? 0;
   const prio = snapshots.filter(isPriority);
   const others = snapshots.filter((s) => !isPriority(s));
-  const byMove = [...others].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
-  const topMovers = byMove.slice(0, 60);
-  const rest = byMove.slice(60).sort(() => Math.random() - 0.5);
+  // Rank by composite "heat" (unusual volume + gap + move + breakout) rather
+  // than raw |%| move, so early pre-spike accumulation surfaces even before
+  // the price has run.
+  const byHeat = [...others].sort((a, b) => heatOf(b) - heatOf(a));
+  const topMovers = byHeat.slice(0, 60);
+  const rest = byHeat.slice(60).sort(() => Math.random() - 0.5);
   const seen = new Set<string>();
   const selected: StockSnapshot[] = [];
   for (const s of [...prio, ...topMovers, ...rest]) {
@@ -205,6 +235,9 @@ function buildStockData(snapshots: StockSnapshot[], priority: Set<string>): stri
     // Legacy Finnhub fields (only present on FMP-backfilled rows).
     if (s.analystBuy > 0) line += ` | Rec:${s.analystBuy}B/${s.analystHold}H/${s.analystSell}S`;
     if (s.targetMean > 0) line += ` | AvgPT:$${s.targetMean.toFixed(2)}`;
+    // Unusual-activity flags last — the early "in play" tells.
+    const sig = sigMap.get(s.symbol);
+    if (sig?.label) line += ` | ⚡${sig.label}`;
     return line;
   }).join("\n");
 }
@@ -219,11 +252,13 @@ function buildShortTermPrompt(stockData: string, count: number, today: string, p
   return `You are an elite stock analyst. Today is ${today} (${phase}). ${phaseHint}
 Below are REAL live prices and data for US stocks.
 
-${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell):
+${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell).
+⚡UNUSUAL-ACTIVITY FLAGS (early "in play" tells that PRECEDE sudden spikes): Vol:Nx=today's volume is N× the 3-month average (accumulation/distribution — smart money positioning ahead of a catalyst); Gap:±%=pre-market/overnight gap on news; NearHigh=within 3% of the 52-week high; Breakout=near-high on heavy volume:
 ${stockData}
 
 TASK: Select exactly 10 stocks for SHORT-TERM trades (1–4 weeks).
 Focus on momentum, swing trades, catalysts, earnings plays, sector rotation. Use the analyst consensus rating and 52-week trend to confirm direction.
+PRIORITIZE stocks flashing ⚡ unusual-activity flags — a volume surge, a gap, or a breakout is the earliest sign a stock is "in play" and about to move; these make the best short-term momentum/catalyst entries. When you pick one, name the flag in the rationale.
 
 RULES:
 1. Entry price within 1-3% of current price — users act TODAY.
@@ -244,7 +279,8 @@ function buildLongTermPrompt(stockData: string, count: number, today: string, ex
   return `You are an elite stock analyst focused on VALUE and GROWTH investing. Today is ${today}.
 Below are REAL live prices and data for US stocks.
 
-${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell):
+${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell).
+⚡UNUSUAL-ACTIVITY FLAGS: Vol:Nx=volume vs 3-month average; Gap:±%=overnight gap; NearHigh=within 3% of 52-week high; Breakout=near-high on heavy volume:
 ${stockData}
 
 TASK: Select exactly 10 stocks for LONG-TERM positions (1–6 months).
@@ -295,6 +331,10 @@ function validatePicks(picks: Pick[], snapshots: StockSnapshot[]): Pick[] {
 
     p.currentPrice = realPrice;
     p.currentChangePct = snap?.changePct ?? 0;
+    if (snap) {
+      const sig = snapshotSignals(snap);
+      if (sig.chips.length) p.signals = sig.chips;
+    }
     return true;
   });
 }
