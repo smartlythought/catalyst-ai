@@ -373,6 +373,40 @@ function getMarketPhase(): string {
   return "after-hours";
 }
 
+/**
+ * On-demand mode: return the last SAVED picks regardless of age, and NEVER
+ * trigger a paid Gemini generation. Falls back to the most recent stored row
+ * (e.g. over a weekend/holiday) so the app always shows the latest picks.
+ */
+async function getStoredPicks(tradingDate: string): Promise<any | null> {
+  try {
+    const sb = createServiceClient();
+    let { data } = await sb
+      .from("daily_picks")
+      .select("*")
+      .eq("generated_date", tradingDate)
+      .single();
+    if (!data) {
+      const { data: latest } = await sb
+        .from("daily_picks")
+        .select("*")
+        .order("generated_date", { ascending: false })
+        .limit(1)
+        .single();
+      data = latest;
+    }
+    if (!data) return null;
+    return {
+      picks: data.picks,
+      generatedAt: data.generated_at,
+      stocksScanned: data.stocks_scanned,
+      disclaimer: "AI-generated recommendations for informational purposes only. Not financial advice.",
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function getCachedPicks(tradingDate: string): Promise<any | null> {
   try {
     const sb = createServiceClient();
@@ -553,15 +587,24 @@ export async function GET(request: Request) {
   const forceRefresh = new URL(request.url).searchParams.get("refresh") === "1";
 
   if (!forceRefresh) {
-    const cached = await getCachedPicks(tradingDate);
-    if (cached) {
-      // Also archive to history when serving from cache, so every day with
-      // picks gets a history row (not only on fresh generation). Idempotent.
-      if (Array.isArray(cached.picks) && cached.picks.length > 0) {
-        await saveAISnapshot("picks", cached.picks);
+    // ON-DEMAND MODE: a plain page view must NEVER trigger a paid Gemini
+    // generation. Serve the last saved picks (any age); generation happens
+    // only with ?refresh=1 (the Admin "Regenerate" button / manual trigger).
+    const stored = await getStoredPicks(tradingDate);
+    if (stored) {
+      if (Array.isArray(stored.picks) && stored.picks.length > 0) {
+        await saveAISnapshot("picks", stored.picks);
       }
-      return NextResponse.json(cached);
+      return NextResponse.json(stored);
     }
+    // Nothing generated yet — tell the client, don't spend on Gemini.
+    return NextResponse.json({
+      picks: [],
+      generatedAt: null,
+      stocksScanned: 0,
+      notGenerated: true,
+      disclaimer: "Picks are generated on demand — run them from the Admin panel.",
+    });
   }
 
   // Fresh generation makes Gemini calls — respect the daily budget. Serve
