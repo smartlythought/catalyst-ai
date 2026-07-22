@@ -50,6 +50,14 @@ const JOBS: JobDef[] = [
     est: "~1 call",
     viewHref: "/picks",
   },
+  {
+    key: "cleanup-history",
+    label: "Clean AI History",
+    desc: "Remove duplicate history rows (same picks copied across days)",
+    est: "Free",
+    free: true,
+    viewHref: "/history",
+  },
 ];
 
 function ago(iso: string | null): string {
@@ -119,7 +127,9 @@ export default function AdminPage() {
       } else {
         const inner = data.result || {};
         const summary =
-          inner.picks != null
+          inner.deleted != null
+            ? `✅ removed ${inner.deleted} duplicate${inner.deleted === 1 ? "" : "s"} · ${inner.kept} kept`
+            : inner.picks != null
             ? `✅ ${Array.isArray(inner.picks) ? inner.picks.length : inner.picks} picks generated`
             : inner.hits != null
               ? `✅ ${Array.isArray(inner.hits) ? inner.hits.length : inner.hits} in play`

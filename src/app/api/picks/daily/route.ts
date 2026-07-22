@@ -592,9 +592,11 @@ export async function GET(request: Request) {
     // only with ?refresh=1 (the Admin "Regenerate" button / manual trigger).
     const stored = await getStoredPicks(tradingDate);
     if (stored) {
-      if (Array.isArray(stored.picks) && stored.picks.length > 0) {
-        await saveAISnapshot("picks", stored.picks);
-      }
+      // NOTE: do NOT archive to history here. A plain page view must not create
+      // a history entry — otherwise viewing the (stale) picks on later days
+      // stamps duplicate rows under each date, making it look like fresh
+      // analysis ran daily when it didn't. History is written ONLY on a real
+      // generation (below), so each row reflects an actual run.
       return NextResponse.json(stored);
     }
     // Nothing generated yet — tell the client, don't spend on Gemini.

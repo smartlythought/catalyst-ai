@@ -15,6 +15,7 @@ const JOBS: Record<string, { path: string; method: "GET" | "POST" }> = {
   deep: { path: "/api/ingest/deep?offset=0&limit=12", method: "POST" },
   weekly: { path: "/api/ingest/weekly-picks", method: "GET" },
   radar: { path: "/api/market/radar?refresh=1", method: "GET" },
+  "cleanup-history": { path: "/api/admin/cleanup-history", method: "POST" },
 };
 
 export async function POST(request: NextRequest) {
