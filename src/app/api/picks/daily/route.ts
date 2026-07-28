@@ -10,6 +10,12 @@ import { buildScanUniverse } from "@/lib/ingestion/universe";
 import { getHeldSymbols } from "@/lib/trading/alpaca";
 import { computeUnusualSignals } from "@/lib/ingestion/signals";
 import { SMALL_CAP } from "@/lib/market-cap";
+import {
+  getEarningsCalendar,
+  getEarningsHistory,
+  earningsLabel,
+  type EarningsInfo,
+} from "@/lib/ingestion/earnings-signals";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -201,7 +207,11 @@ function snapshotSignals(s: StockSnapshot) {
   });
 }
 
-function buildStockData(snapshots: StockSnapshot[], priority: Set<string>): string {
+function buildStockData(
+  snapshots: StockSnapshot[],
+  priority: Set<string>,
+  earnings: Map<string, EarningsInfo>
+): string {
   // Keep the prompt focused: always include priority names (holdings + today's
   // movers), then the stocks showing the most unusual activity ("in play" —
   // volume surge / gap / breakout / big move), then a random rotation of the
@@ -247,6 +257,11 @@ function buildStockData(snapshots: StockSnapshot[], priority: Set<string>): stri
     // Unusual-activity flags last — the early "in play" tells.
     const sig = sigMap.get(s.symbol);
     if (sig?.label) line += ` | ⚡${sig.label}`;
+    // Earnings proximity — a binary catalyst the AI must weigh AND flag as risk.
+    const ei = earnings.get(s.symbol.toUpperCase());
+    if (ei && ei.daysAway >= 0 && ei.daysAway <= 7) {
+      line += ` | ⏰${earningsLabel(ei)}${ei.hour === "bmo" ? "(pre)" : ei.hour === "amc" ? "(post)" : ""}`;
+    }
     return line;
   }).join("\n");
 }
@@ -262,12 +277,14 @@ function buildShortTermPrompt(stockData: string, count: number, today: string, p
 Below are REAL live prices and data for US stocks.
 
 ${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell).
-⚡UNUSUAL-ACTIVITY FLAGS (early "in play" tells that PRECEDE sudden spikes): Vol:Nx=today's volume is N× the 3-month average (accumulation/distribution — smart money positioning ahead of a catalyst); Gap:±%=pre-market/overnight gap on news; NearHigh=within 3% of the 52-week high; Breakout=near-high on heavy volume:
+⚡UNUSUAL-ACTIVITY FLAGS (early "in play" tells that PRECEDE sudden spikes): Vol:Nx=today's volume is N× the 3-month average (accumulation/distribution — smart money positioning ahead of a catalyst); Gap:±%=pre-market/overnight gap on news; NearHigh=within 3% of the 52-week high; Breakout=near-high on heavy volume.
+⏰EARNINGS FLAG: "⏰Earnings in Nd" = the company reports earnings in N days (pre=before open, post=after close). Earnings are a BINARY, high-variance event — the stock can gap sharply EITHER way:
 ${stockData}
 
 TASK: Select 8-10 stocks for SHORT-TERM trades (1–4 weeks). QUALITY OVER QUANTITY — a tight list of 8 high-conviction setups beats a padded list of 10. If you can't find 10 you truly believe in, return fewer.
 Focus on LIQUID, established large- and mid-cap names, each with a SPECIFIC near-term driver: an upcoming earnings/product/FDA event, a fresh analyst upgrade, sector rotation, or a clear technical setup (⚡ volume surge / gap / breakout). Use the analyst consensus rating and 52-week trend to confirm direction.
 PRIORITIZE QUALITY names flashing ⚡ unusual-activity flags — a volume surge, gap, or breakout is the earliest sign a stock is "in play"; these make the best short-term entries. When you pick one, name the flag in the rationale.
+EARNINGS DISCIPLINE (⏰): for any stock reporting within ~2 days, treat it as EARNINGS RISK — a binary gap, NOT a sure thing. Only rate it high conviction if the pre-earnings setup is genuinely strong (bullish momentum + ⚡ accumulation + bullish analyst trend); otherwise lower the conviction or favor entering AFTER the report. ALWAYS state the earnings date and the two-way risk in the rationale.
 
 RULES:
 1. Entry price within 1-3% of current price — users act TODAY.
@@ -290,7 +307,7 @@ function buildLongTermPrompt(stockData: string, count: number, today: string, ex
 Below are REAL live prices and data for US stocks.
 
 ${macro}LIVE MARKET DATA (fields: price, %day, PE, FwdPE, MCap, 52wH/L, 52wChg, EPSg=fwd-vs-trailing EPS growth, Div yield, Analyst=consensus rating 1=Strong Buy→5=Sell).
-⚡UNUSUAL-ACTIVITY FLAGS: Vol:Nx=volume vs 3-month average; Gap:±%=overnight gap; NearHigh=within 3% of 52-week high; Breakout=near-high on heavy volume:
+⚡UNUSUAL-ACTIVITY FLAGS: Vol:Nx=volume vs 3-month average; Gap:±%=overnight gap; NearHigh=within 3% of 52-week high; Breakout=near-high on heavy volume. ⏰Earnings in Nd = reports earnings in N days (binary event — factor the risk):
 ${stockData}
 
 TASK: Select exactly 10 stocks for LONG-TERM positions (1–6 months).
@@ -309,7 +326,11 @@ RULES:
 Return a JSON array of exactly 10 objects with: "symbol", "companyName", "action" (BUY/SELL), "entryPrice", "targetPrice", "stopLoss", "timeframe" (always "long-term"), "conviction" (50-95), "rationale" (2 sentences), "catalysts" (array of 2-3). Return ONLY the JSON array.`;
 }
 
-function validatePicks(picks: Pick[], snapshots: StockSnapshot[]): Pick[] {
+function validatePicks(
+  picks: Pick[],
+  snapshots: StockSnapshot[],
+  earnings: Map<string, EarningsInfo>
+): Pick[] {
   const snapMap = new Map(snapshots.map(s => [s.symbol, s]));
   const seen = new Set<string>();
 
@@ -344,6 +365,11 @@ function validatePicks(picks: Pick[], snapshots: StockSnapshot[]): Pick[] {
     if (snap) {
       const sig = snapshotSignals(snap);
       if (sig.chips.length) p.signals = sig.chips;
+    }
+    // Attach an earnings chip if the company reports within ~10 days.
+    const ei = earnings.get(p.symbol.toUpperCase());
+    if (ei && ei.daysAway >= 0 && ei.daysAway <= 10) {
+      p.signals = [...(p.signals || []), earningsLabel(ei)];
     }
     return true;
   });
@@ -462,7 +488,10 @@ async function fetchSocialLine(symbol: string): Promise<string> {
  * (Yahoo) + social sentiment (Finnhub), then have the AI refine conviction &
  * rationale using that data. FAIL-SOFT: any error returns pass-1 picks intact.
  */
-async function deepRefinePicks(picks: Pick[]): Promise<Pick[]> {
+async function deepRefinePicks(
+  picks: Pick[],
+  earnings: Map<string, EarningsInfo>
+): Promise<Pick[]> {
   if (!GEMINI_KEY || picks.length === 0) return picks;
   try {
     const lines: string[] = [];
@@ -472,11 +501,23 @@ async function deepRefinePicks(picks: Pick[]): Promise<Pick[]> {
       const batch = picks.slice(i, i + 6);
       const results = await Promise.all(
         batch.map(async (p) => {
-          const [f, social] = await Promise.all([
+          const ei = earnings.get(p.symbol.toUpperCase());
+          const reportingSoon = !!ei && ei.daysAway >= 0 && ei.daysAway <= 5;
+          const [f, social, hist] = await Promise.all([
             yahooFundamentals(p.symbol),
             fetchSocialLine(p.symbol),
+            reportingSoon ? getEarningsHistory(p.symbol) : Promise.resolve(null),
           ]);
           let line = `${p.symbol}(${p.action})`;
+          if (ei && ei.daysAway >= 0 && ei.daysAway <= 7) {
+            line += ` ⏰${earningsLabel(ei)}`;
+            if (hist) {
+              line += ` [beat ${hist.beats}/${hist.total}q`;
+              if (hist.lastSurprisePct != null)
+                line += `, last surprise ${hist.lastSurprisePct >= 0 ? "+" : ""}${hist.lastSurprisePct.toFixed(1)}%`;
+              line += `]`;
+            }
+          }
           if (f) {
             if (f.recommendationKey) line += ` Rec:${f.recommendationKey}`;
             if (f.targetMeanPrice) line += ` PT:$${f.targetMeanPrice.toFixed(2)}`;
@@ -511,13 +552,15 @@ async function deepRefinePicks(picks: Pick[]): Promise<Pick[]> {
       .map((p) => `${p.symbol} ${p.action} entry $${p.entryPrice} target $${p.targetPrice} stop $${p.stopLoss} (${p.timeframe})`)
       .join("\n");
 
-    const prompt = `You are an elite analyst doing a FINAL review of today's selected picks using DEEP fundamentals and social sentiment. For EACH symbol, return a refined conviction (50-95) and a sharper 2-sentence rationale that cites the single strongest data point (valuation, growth, analyst consensus, or sentiment). Keep the same action and price levels.
+    const prompt = `You are an elite analyst doing a FINAL review of today's selected picks using DEEP fundamentals, social sentiment, and earnings timing. For EACH symbol, return a refined conviction (50-95) and a sharper 2-sentence rationale that cites the single strongest data point (valuation, growth, analyst consensus, sentiment, or pre-earnings setup). Keep the same action and price levels.
 
 SELECTED PICKS:
 ${picksList}
 
-DEEP DATA (Rec=analyst consensus, PT=mean target, ROE/Margin/growth, D/E, PEG, Beta, ShortFloat, Analysts SB/B/H/S/SS, Social=mention volume & net sentiment):
+DEEP DATA (Rec=analyst consensus, PT=mean target, ROE/Margin/growth, D/E, PEG, Beta, ShortFloat, Analysts SB/B/H/S/SS, Social=mention volume & net sentiment, ⏰=earnings timing with [beat X/Yq, last surprise %]):
 ${lines.join("\n")}
+
+EARNINGS RULE: for any ⏰ stock reporting within ~2 days, earnings are a BINARY risk — do NOT treat as a sure win. Nudge conviction UP only when the pre-earnings picture is strongly favorable (consistent beat history + positive last surprise + bullish analyst trend + momentum); otherwise nudge conviction DOWN for the gap risk, and name the earnings date + two-way risk in the rationale.
 
 Return ONLY a JSON array: [{"symbol","conviction","rationale"}].`;
 
@@ -657,8 +700,11 @@ export async function GET(request: Request) {
     const shortSnapshots = snapshots.filter(
       (s) => heldUpper.has(s.symbol.toUpperCase()) || s.marketCap >= SHORT_TERM_MIN_CAP
     );
-    const stockDataShort = buildStockData(shortSnapshots, priority);
-    const stockDataAll = buildStockData(snapshots, priority);
+    // Earnings calendar for the next 10 days — one Finnhub call, injected as an
+    // additive ⏰ signal (imminent earnings = binary catalyst, flagged as risk).
+    const earnings = await getEarningsCalendar(10).catch(() => new Map<string, EarningsInfo>());
+    const stockDataShort = buildStockData(shortSnapshots, priority, earnings);
+    const stockDataAll = buildStockData(snapshots, priority, earnings);
     // Free macro snapshot (yield curve, VIX, USD, oil, gold, index trend) →
     // the AI factors the regime into risk appetite and sector tilt. One call.
     const macro = await getMarketContextText();
@@ -730,12 +776,12 @@ export async function GET(request: Request) {
       );
     }
 
-    const validated = validatePicks(picks, snapshots);
+    const validated = validatePicks(picks, snapshots, earnings);
 
     // Pass 2 — deep-dive the finalists: enrich each with deep fundamentals +
     // social sentiment, then let the AI refine conviction & rationale. Fully
     // fail-soft: any error leaves the pass-1 picks untouched.
-    const refined = await deepRefinePicks(validated);
+    const refined = await deepRefinePicks(validated, earnings);
 
     // QUALITY BACKSTOP for short-term: enforce the ≥$1B market-cap floor and the
     // conviction floor even if the model slips a name through. Long-term is

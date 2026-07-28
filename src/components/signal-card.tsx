@@ -84,18 +84,22 @@ export function SignalCard({ signal }: SignalCardProps) {
           </div>
         )}
 
-        {/* Row 2c: Unusual-activity flags — early "in play" tells */}
+        {/* Row 2c: Unusual-activity flags + earnings — early "in play" tells */}
         {signal.activity && signal.activity.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {signal.activity.map((a) => (
-              <span
-                key={a}
-                className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold tracking-[0.3px] uppercase text-accent-brand px-2 py-0.5 rounded-md bg-accent-brand/10 border border-accent-brand/25"
-              >
-                <span aria-hidden>⚡</span>
-                {a}
-              </span>
-            ))}
+            {signal.activity.map((a) => {
+              const isEarn = a.toLowerCase().includes("earnings");
+              return (
+                <span
+                  key={a}
+                  className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold tracking-[0.3px] uppercase px-2 py-0.5 rounded-md border text-accent-brand border-accent-brand/25 bg-accent-brand/10"
+                  style={isEarn ? { color: "#F5A524", borderColor: "rgba(245,165,36,0.3)", background: "rgba(245,165,36,0.1)" } : undefined}
+                >
+                  <span aria-hidden>{isEarn ? "⏰" : "⚡"}</span>
+                  {a}
+                </span>
+              );
+            })}
           </div>
         )}
 
