@@ -199,6 +199,12 @@ export default function PerformancePage() {
                         <span className={`font-mono text-right ${tone(s.meanExcessSpy)}`}>
                           {pct(s.meanExcessSpy)}
                         </span>
+                        <span className="text-text-faint" title="Middle result — not skewed by one huge winner or loser">
+                          Median vs SPY
+                        </span>
+                        <span className={`font-mono text-right ${tone(s.medianExcessSpy)}`}>
+                          {pct(s.medianExcessSpy)}
+                        </span>
                         <span className="text-text-faint">Edge vs random</span>
                         <span className={`font-mono text-right ${tone(s.edge)}`}>{pct(s.edge)}</span>
                         <span className="text-text-faint">Avg vs sector</span>

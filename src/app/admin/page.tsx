@@ -196,7 +196,7 @@ export default function AdminPage() {
 
   // Freshness helper per job.
   const freshnessFor = (key: string): { at: string | null; count: number } | null => {
-    if (key === "picks" || key === "weekly") return { at: picksAt, count: picksCount };
+    if (key === "picks") return { at: picksAt, count: picksCount };
     if (key === "radar") return { at: radarAt, count: radarCount };
     return null;
   };

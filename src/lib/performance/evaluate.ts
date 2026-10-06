@@ -39,6 +39,9 @@ const BASELINE: string[] = (() => {
 })();
 
 const MARKET_OPEN_MIN = 9 * 60 + 30;
+// If the first available bar is this many calendar days after the call, the
+// symbol had a data gap (halt, delisting, feed hole) — don't pretend it entered.
+const MAX_ENTRY_GAP_DAYS = 5;
 const CLOSE_SETTLED_MIN = 16 * 60 + 15;
 
 interface Series {
@@ -173,6 +176,11 @@ export async function evaluateCalls(): Promise<EvaluationResult> {
     if (e < 0) return { ...base, status: "pending" };
 
     const entryDate = s.bars[e].date;
+    const gapDays =
+      (new Date(entryDate + "T00:00:00Z").getTime() - new Date(gen.date + "T00:00:00Z").getTime()) /
+      86400000;
+    if (gapDays > MAX_ENTRY_GAP_DAYS) return base; // status stays "no-data"
+
     const entryPx = s.bars[e].open;
     const etf = series.get(SECTOR_ETF[sector]);
 

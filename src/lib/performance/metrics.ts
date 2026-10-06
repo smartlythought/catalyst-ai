@@ -42,6 +42,7 @@ export interface HorizonSummary {
   n: number;
   hitRate: number | null;
   meanExcessSpy: number | null;
+  medianExcessSpy: number | null; // robust to one-off blowups (e.g. a +80% gap)
   meanExcessSector: number | null;
   tStat: number | null; // naive: overlapping windows overstate it
   ic: number | null; // Spearman rank corr: conviction vs excess return
@@ -51,6 +52,13 @@ export interface HorizonSummary {
 }
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+
+function median(xs: number[]): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
 
 function ranks(xs: number[]): number[] {
   const order = xs.map((v, i) => [v, i] as const).sort((a, b) => a[0] - b[0]);
@@ -109,6 +117,7 @@ export function summarize(calls: EvaluatedCall[], horizon: Horizon): HorizonSumm
     n,
     hitRate: n ? ex.filter((v) => v > 0).length / n : null,
     meanExcessSpy: m,
+    medianExcessSpy: median(ex),
     meanExcessSector: mean(sec),
     tStat,
     ic: spearman(
