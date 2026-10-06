@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { aiConfigured, generateJSON } from "@/lib/ai/llm";
 import { withinDailyAIBudget } from "@/lib/ai/usage";
 import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
 import { getMarketContextText } from "@/lib/ingestion/yahoo";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 
 interface IPO {
   name: string;
@@ -121,7 +120,7 @@ function scoreIPOs(ipos: IPO[]): IPO[] {
  * the page is never blank. Cached hourly (revalidate=3600) → ~24 calls/day max.
  */
 async function enrichWithAI(scored: IPO[]): Promise<IPO[]> {
-  if (!GEMINI_KEY || scored.length === 0) return scored;
+  if (!aiConfigured() || scored.length === 0) return scored;
   if (!(await withinDailyAIBudget())) return scored;
 
   const top = scored.slice(0, 12);
@@ -137,42 +136,28 @@ Return ONLY a JSON array of objects, each:
 - "rating": "strong" | "moderate" | "weak" | "avoid"
 Consider sector trends, size, pricing, and market conditions.`;
 
-  for (const model of GEMINI_MODELS) {
-    try {
-      const res = await geminiFetch(model, GEMINI_KEY, {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          // temperature 0 → deterministic: the same IPO data yields the same
-          // rating every run, so the strength badge doesn't flip between views.
-          temperature: 0,
-          maxOutputTokens: 2048,
-          thinkingConfig: { thinkingBudget: 0 },
-        },
-      });
-      if (!res?.ok) continue;
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) continue;
-      const analyses: { symbol: string; analysis: string; rating: string }[] =
-        JSON.parse(text);
-      const bySymbol = new Map(analyses.map((a) => [a.symbol, a]));
-      return scored.map((ipo) => {
-        const a = bySymbol.get(ipo.symbol);
-        if (!a) return ipo; // keep heuristic for any the model skipped
-        return {
-          ...ipo,
-          aiAnalysis: a.analysis || ipo.aiAnalysis,
-          aiRating: (["strong", "moderate", "weak", "avoid"].includes(a.rating)
-            ? a.rating
-            : ipo.aiRating) as IPO["aiRating"],
-        };
-      });
-    } catch {
-      continue;
-    }
-  }
-  return scored; // AI unavailable → heuristic stands
+  const analyses = await generateJSON<{ symbol: string; analysis: string; rating: string }[]>({
+    prompt,
+    // temperature 0 → deterministic: the same IPO data yields the same
+    // rating every run, so the strength badge doesn't flip between views.
+    temperature: 0,
+    maxTokens: 2048,
+    timeoutMs: 90_000,
+  });
+  if (!Array.isArray(analyses)) return scored; // AI unavailable → heuristic stands
+
+  const bySymbol = new Map(analyses.map((a) => [a.symbol, a]));
+  return scored.map((ipo) => {
+    const a = bySymbol.get(ipo.symbol);
+    if (!a) return ipo; // keep heuristic for any the model skipped
+    return {
+      ...ipo,
+      aiAnalysis: a.analysis || ipo.aiAnalysis,
+      aiRating: (["strong", "moderate", "weak", "avoid"].includes(a.rating)
+        ? a.rating
+        : ipo.aiRating) as IPO["aiRating"],
+    };
+  });
 }
 
 export async function GET() {

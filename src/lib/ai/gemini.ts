@@ -1,7 +1,6 @@
-import { GEMINI_MODELS, geminiUrl } from "@/lib/ai/models";
-
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
-const GROQ_KEY = process.env.GROQ_API_KEY || "";
+// Single-stock signal calls + weekly summary. Provider-agnostic via llm.ts
+// (file name kept for import stability).
+import { generateJSON, lastLLMError } from "@/lib/ai/llm";
 
 interface SignalInput {
   ticker: string;
@@ -56,17 +55,15 @@ Rules:
 - Be conservative. When in doubt, WATCH.`;
 
 export async function generateCall(input: SignalInput): Promise<AICallResult> {
-  const prompt = buildPrompt(input);
-
-  try {
-    return await callGemini(prompt);
-  } catch {
-    try {
-      return await callGroq(prompt);
-    } catch (e) {
-      throw new Error(`AI inference failed on both Gemini and Groq: ${e}`);
-    }
-  }
+  const result = await generateJSON<AICallResult>({
+    system: SYSTEM_PROMPT,
+    prompt: buildPrompt(input),
+    temperature: 0.3,
+    maxTokens: 2048,
+    timeoutMs: 60_000,
+  });
+  if (!result) throw new Error(`AI inference failed: ${lastLLMError}`);
+  return result;
 }
 
 function buildPrompt(input: SignalInput): string {
@@ -89,76 +86,6 @@ function buildPrompt(input: SignalInput): string {
   }
   prompt += `\nGenerate the call JSON:`;
   return prompt;
-}
-
-async function callGemini(prompt: string): Promise<AICallResult> {
-  if (!GEMINI_KEY) throw new Error("No Gemini API key");
-
-  let lastErr = "";
-  for (const model of GEMINI_MODELS) {
-    const res = await fetch(geminiUrl(model, GEMINI_KEY), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.3,
-          topP: 0.8,
-          responseMimeType: "application/json",
-          // Disable 2.5-flash "thinking" — faster + cheaper per call, which
-          // matters for the bulk ingestion (many calls per run).
-          thinkingConfig: { thinkingBudget: 0 },
-        },
-      }),
-    }).catch(() => null);
-
-    if (!res) {
-      lastErr = `${model}: network error`;
-      continue;
-    }
-    if (!res.ok) {
-      lastErr = `${model}: ${res.status} ${await res.text()}`;
-      continue;
-    }
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (text) return JSON.parse(text);
-    lastErr = `${model}: empty response`;
-  }
-  throw new Error(`Gemini failed on all models — ${lastErr}`);
-}
-
-async function callGroq(prompt: string): Promise<AICallResult> {
-  if (!GROQ_KEY) throw new Error("No Groq API key");
-
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${GROQ_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Groq ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
-  const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new Error("Empty Groq response");
-
-  return JSON.parse(text);
 }
 
 /**
@@ -189,11 +116,13 @@ Return JSON:
   "summary": "One paragraph market summary"
 }`;
 
-  try {
-    const result = await callGemini(prompt);
-    return result as unknown as { shortTerm: string[]; longTerm: string[]; summary: string };
-  } catch {
-    const result = await callGroq(prompt);
-    return result as unknown as { shortTerm: string[]; longTerm: string[]; summary: string };
-  }
+  const result = await generateJSON<{ shortTerm: string[]; longTerm: string[]; summary: string }>({
+    system: SYSTEM_PROMPT,
+    prompt,
+    temperature: 0.3,
+    maxTokens: 2048,
+    timeoutMs: 60_000,
+  });
+  if (!result) throw new Error(`AI inference failed: ${lastLLMError}`);
+  return result;
 }

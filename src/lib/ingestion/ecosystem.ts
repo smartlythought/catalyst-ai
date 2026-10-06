@@ -6,10 +6,9 @@
  * Example: SpaceX → find all listed SpaceX partners/suppliers and rank them.
  */
 
-import { GEMINI_MODELS } from "@/lib/ai/models";
+import { aiConfigured, generateJSON } from "@/lib/ai/llm";
 import { USER_AI_ENABLED } from "@/lib/ai/config";
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const SEC_USER_AGENT = process.env.SEC_EDGAR_USER_AGENT || "Catalyst research@catalyst.claudeo.ai";
 
 // In-memory cache for AI-generated ecosystems, keyed by symbol. Survives within
@@ -291,7 +290,7 @@ async function generateEcosystemWithAI(symbol: string): Promise<EcosystemEdge[]>
   // User-AI disabled to conserve quota → no on-demand Gemini ecosystem gen.
   // Curated (mega-cap) ecosystems still work; others simply return empty.
   if (!USER_AI_ENABLED) return [];
-  if (!GEMINI_KEY) return [];
+  if (!aiConfigured()) return [];
 
   const prompt = `You are a financial analyst. For the publicly traded company with ticker "${symbol}", identify its key business ecosystem relationships.
 
@@ -311,40 +310,15 @@ Rules:
 
 Return ONLY the JSON array, no other text.`;
 
-  const models = GEMINI_MODELS;
-
   try {
-    let text: string | null = null;
+    const parsed = await generateJSON<any[]>({
+      prompt,
+      temperature: 0.3,
+      maxTokens: 4096,
+      timeoutMs: 60_000,
+    });
+    if (!parsed) return [];
 
-    for (const model of models) {
-      try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: {
-                temperature: 0.3,
-                responseMimeType: "application/json",
-              },
-            }),
-          }
-        );
-
-        if (!res.ok) continue;
-        const data = await res.json();
-        text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) break;
-      } catch {
-        continue;
-      }
-    }
-
-    if (!text) return [];
-
-    const parsed = JSON.parse(text);
     const tierConfidence: Record<string, number> = { S: 0.95, A: 0.85, B: 0.7, C: 0.55 };
     const validRelationships = new Set(["supplier", "customer", "partner", "competitor", "subsidiary", "investor"]);
     const validTiers = new Set(["S", "A", "B", "C"]);
@@ -389,7 +363,7 @@ export async function extractEcosystemFromFiling(
   ticker: string,
   filingText: string
 ): Promise<EcosystemEdge[]> {
-  if (!GEMINI_KEY) return [];
+  if (!aiConfigured()) return [];
 
   const prompt = `Analyze this SEC 10-K filing excerpt for ${ticker} and extract all mentioned business relationships with other publicly traded companies.
 
@@ -407,27 +381,14 @@ ${filingText.slice(0, 8000)}
 Return JSON:`;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: "application/json",
-          },
-        }),
-      }
-    );
+    const parsed = await generateJSON<any[]>({
+      prompt,
+      temperature: 0.2,
+      maxTokens: 4096,
+      timeoutMs: 60_000,
+    });
+    if (!parsed) return [];
 
-    if (!res.ok) return [];
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return [];
-
-    const parsed = JSON.parse(text);
     return (Array.isArray(parsed) ? parsed : []).map(
       (e: { targetTicker: string; relationship: string; description: string; confidence: number }) => ({
         sourceTicker: ticker,

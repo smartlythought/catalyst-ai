@@ -8,17 +8,14 @@ import {
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { getEcosystemMap } from "@/lib/ingestion/ecosystem";
 import { yahooFundamentals, yahooMarketContext } from "@/lib/ingestion/yahoo";
-import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { aiConfigured, chatWithTools, type ChatMessage, type ToolDef } from "@/lib/ai/llm";
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const FMP_KEY = process.env.FMP_API_KEY || "";
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
-// Primary model + fallback, mirroring the rest of the app.
-const MODELS = GEMINI_MODELS;
 const MAX_ITERATIONS = 5;
 const TOOL_TIMEOUT_MS = 12_000;
-const GEMINI_TIMEOUT_MS = 25_000;
+const MODEL_TIMEOUT_MS = 45_000;
 
 const DISCLAIMER =
   "This is AI-generated analysis, not personalized financial advice. Do your own research.";
@@ -401,57 +398,21 @@ const TOOLS: AgentTool[] = [
 const TOOL_MAP = new Map(TOOLS.map((t) => [t.declaration.name, t]));
 
 // ---------------------------------------------------------------------------
-// Gemini function-calling loop
+// Tool-calling loop (provider-agnostic via llm.ts)
 // ---------------------------------------------------------------------------
 
-type GeminiPart =
-  | { text: string }
-  | { functionCall: { name: string; args: Record<string, unknown> } }
-  | { functionResponse: { name: string; response: Record<string, unknown> } };
+const TOOL_DEFS: ToolDef[] = TOOLS.map((t) => t.declaration);
 
-interface GeminiContent {
-  role: "user" | "model" | "function";
-  parts: GeminiPart[];
-}
+// Tool results go back to the model as JSON; cap size so one large payload
+// (e.g. 5-year financials) can't blow up latency or the context.
+const MAX_TOOL_RESULT_CHARS = 12_000;
 
-/** Gemini requires functionResponse.response to be a JSON object — wrap non-objects. */
+/** Tool results are fed back as JSON objects — wrap non-objects. */
 function asResponseObject(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
   return { result: value };
-}
-
-async function callGeminiWithTools(
-  contents: GeminiContent[]
-): Promise<GeminiContent | null> {
-  const body = {
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    tools: [{ function_declarations: TOOLS.map((t) => t.declaration) }],
-    tool_config: { function_calling_config: { mode: "AUTO" } },
-    contents,
-    generationConfig: { temperature: 0.4, topP: 0.9, maxOutputTokens: 4096 },
-  };
-
-  for (const model of MODELS) {
-    try {
-      const res = await geminiFetch(model, GEMINI_KEY, body, GEMINI_TIMEOUT_MS);
-      if (!res) {
-        console.log(`[agent] Gemini ${model} network error`);
-        continue;
-      }
-      if (!res.ok) {
-        console.log(`[agent] Gemini ${model} ${res.status}`);
-        continue;
-      }
-      const data = await res.json();
-      const content = data.candidates?.[0]?.content;
-      if (content) return content as GeminiContent;
-    } catch (e) {
-      console.log(`[agent] Gemini ${model} error:`, e);
-    }
-  }
-  return null;
 }
 
 async function runTool(
@@ -480,10 +441,14 @@ export interface AgentResult {
   toolsUsed: string[];
 }
 
+function withDisclaimer(text: string): string {
+  return text.includes("not personalized financial advice") ? text : `${text}\n\n${DISCLAIMER}`;
+}
+
 /**
- * Run the Catalyst research agent: a Gemini function-calling loop that gathers
- * live data via tools and synthesizes an answer. Returns null on hard failure
- * so the caller can fall back to the legacy context-dump path.
+ * Run the Catalyst research agent: a function-calling loop that gathers live
+ * data via tools and synthesizes an answer. Returns null on hard failure so
+ * the caller can fall back to the legacy context-dump path.
  */
 export async function runResearchAgent(opts: {
   message: string;
@@ -491,89 +456,65 @@ export async function runResearchAgent(opts: {
   history?: { role: "user" | "assistant"; content: string }[];
   ctx: AgentContext;
 }): Promise<AgentResult | null> {
-  if (!GEMINI_KEY) return null;
+  if (!aiConfigured()) return null;
 
-  const contents: GeminiContent[] = [];
+  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
 
   // Replay prior turns so follow-ups ("what about its competitors?") have
-  // context. Gemini requires the first turn to be from the user, so drop any
+  // context. The first replayed turn must be from the user, so drop any
   // leading assistant turns left over after slicing.
   const recent = (opts.history || []).slice(-6);
   while (recent.length && recent[0].role !== "user") recent.shift();
   for (const m of recent) {
-    contents.push({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    });
+    messages.push({ role: m.role === "assistant" ? "assistant" : "user", content: m.content });
   }
 
   const opener = opts.ticker
     ? `The user is currently viewing ${opts.ticker.toUpperCase()}. Question: ${opts.message}`
     : opts.message;
-  contents.push({ role: "user", parts: [{ text: opener }] });
+  messages.push({ role: "user", content: opener });
 
   const toolsUsed: string[] = [];
+  const callOpts = { temperature: 0.4, maxTokens: 4096, timeoutMs: MODEL_TIMEOUT_MS };
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const modelContent = await callGeminiWithTools(contents);
-    if (!modelContent) return null; // hard failure → caller falls back
-
-    contents.push(modelContent);
-
-    const calls = (modelContent.parts || []).filter(
-      (p): p is { functionCall: { name: string; args: Record<string, unknown> } } =>
-        "functionCall" in p
-    );
+    const turn = await chatWithTools(messages, TOOL_DEFS, callOpts);
+    if (!turn) return null; // hard failure → caller falls back
 
     // No tool calls → the model produced its final answer.
-    if (calls.length === 0) {
-      const text = (modelContent.parts || [])
-        .map((p) => ("text" in p ? p.text : ""))
-        .join("")
-        .trim();
+    if (turn.toolCalls.length === 0) {
+      const text = turn.content.trim();
       if (!text) return null;
-      const reply = text.includes("not personalized financial advice")
-        ? text
-        : `${text}\n\n${DISCLAIMER}`;
-      return { reply, toolsUsed: [...new Set(toolsUsed)] };
+      return { reply: withDisclaimer(text), toolsUsed: [...new Set(toolsUsed)] };
     }
 
+    messages.push({ role: "assistant", content: turn.content, toolCalls: turn.toolCalls });
+
     // Execute all requested tools (possibly in parallel) and feed results back.
-    const responses = await Promise.all(
-      calls.map(async (c) => {
-        toolsUsed.push(c.functionCall.name);
-        const response = await runTool(
-          c.functionCall.name,
-          c.functionCall.args || {},
-          opts.ctx
-        );
+    const results = await Promise.all(
+      turn.toolCalls.map(async (c): Promise<ChatMessage> => {
+        toolsUsed.push(c.name);
+        const response = await runTool(c.name, c.args || {}, opts.ctx);
         return {
-          functionResponse: { name: c.functionCall.name, response },
-        } as GeminiPart;
+          role: "tool",
+          toolCallId: c.id,
+          name: c.name,
+          content: JSON.stringify(response).slice(0, MAX_TOOL_RESULT_CHARS),
+        };
       })
     );
-    contents.push({ role: "function", parts: responses });
+    messages.push(...results);
   }
 
   // Hit the iteration cap — ask for a final answer with no more tools.
-  contents.push({
+  messages.push({
     role: "user",
-    parts: [
-      {
-        text: "Based on the data gathered, give your final analysis now. Do not call any more tools.",
-      },
-    ],
+    content: "Based on the data gathered, give your final analysis now. Do not call any more tools.",
   });
-  const finalContent = await callGeminiWithTools(contents);
-  const finalText = (finalContent?.parts || [])
-    .map((p) => ("text" in p ? p.text : ""))
-    .join("")
-    .trim();
+  const final = await chatWithTools(messages, TOOL_DEFS, { ...callOpts, toolChoice: "none" });
+  const finalText = final?.content.trim() || "";
   if (!finalText) return null;
-  const reply = finalText.includes("not personalized financial advice")
-    ? finalText
-    : `${finalText}\n\n${DISCLAIMER}`;
-  return { reply, toolsUsed: [...new Set(toolsUsed)] };
+  return { reply: withDisclaimer(finalText), toolsUsed: [...new Set(toolsUsed)] };
 }
 
 /** Human-readable labels for the tool trace shown in the UI. */

@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { GEMINI_MODELS } from "@/lib/ai/models";
+import { aiConfigured, generateJSON, lastLLMError } from "@/lib/ai/llm";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
 import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
 import { getMarketContextText } from "@/lib/ingestion/yahoo";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
-
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
+export const maxDuration = 300;
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
 interface PennyPick {
@@ -34,7 +32,7 @@ export async function GET() {
     );
   }
 
-  if (!GEMINI_KEY) {
+  if (!aiConfigured()) {
     return NextResponse.json({ error: "AI not configured" }, { status: 500 });
   }
 
@@ -83,48 +81,17 @@ Return a JSON array of 10 objects. Each must have:
 Mix of stocks from different sectors. Only include real, actively traded US stocks.
 Return ONLY the JSON array.`;
 
-  const models = GEMINI_MODELS;
-  let picks: PennyPick[] = [];
-  let lastErr = "";
-
-  for (const model of models) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.35,
-              maxOutputTokens: 8192,
-              // Disable 2.5-flash "thinking" to keep latency under the timeout.
-              thinkingConfig: { thinkingBudget: 0 },
-            },
-          }),
-          signal: AbortSignal.timeout(28000),
-        }
-      );
-
-      if (!res.ok) { lastErr = `${model}:${res.status}`; continue; }
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) { lastErr = `${model}:empty`; continue; }
-
-      picks = JSON.parse(text);
-      if (Array.isArray(picks) && picks.length > 0) break;
-      lastErr = `${model}:not-array`;
-    } catch (e) {
-      lastErr = `${model}:${String(e).slice(0, 80)}`;
-      continue;
-    }
-  }
+  const parsed = await generateJSON<PennyPick[]>({
+    prompt,
+    temperature: 0.35,
+    maxTokens: 8192,
+    timeoutMs: 120_000,
+  });
+  const picks: PennyPick[] = Array.isArray(parsed) ? parsed : [];
 
   if (!picks.length) {
     return NextResponse.json(
-      { error: "Failed to generate", debug: lastErr, picks: [] },
+      { error: "Failed to generate", debug: lastLLMError, picks: [] },
       { status: 502 }
     );
   }

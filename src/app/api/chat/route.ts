@@ -4,14 +4,14 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getQuote, getAnalystRatings, getCompanyProfile } from "@/lib/ingestion/market-data";
 import { getCompanyNews } from "@/lib/ingestion/news";
 import { runResearchAgent } from "@/lib/ai/agent";
-import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { aiConfigured, generateText, lastLLMError } from "@/lib/ai/llm";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
-
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
+// The agent can make several model + tool round-trips; open models on the
+// shared free tier are slower than Gemini Flash. Hobby allows up to 300s.
+export const maxDuration = 300;
 
 const SYSTEM_PROMPT = `You are Catalyst AI — an expert stock market analyst that produces institutional-grade research. You combine data from multiple sources (SEC filings, analyst consensus, technical analysis, news sentiment) into honest, clear analysis.
 
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No message" }, { status: 400 });
   }
 
-  if (!GEMINI_KEY) {
+  if (!aiConfigured()) {
     return NextResponse.json({ error: "AI not configured" }, { status: 503 });
   }
 
@@ -143,42 +143,20 @@ export async function POST(request: NextRequest) {
 
   // Legacy single-shot fallback (used only if the agent path returned null).
   try {
-    let reply = "";
-    let lastStatus = 0;
-    let lastErr = "";
-    for (const model of GEMINI_MODELS) {
-      const res = await geminiFetch(model, GEMINI_KEY, {
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.4,
-          topP: 0.9,
-          maxOutputTokens: 4096,
-        },
-      });
-
-      if (!res) {
-        lastErr = `${model}: network error`;
-        continue;
-      }
-      if (!res.ok) {
-        lastStatus = res.status;
-        lastErr = `${model}: ${res.status} ${(await res.text()).slice(0, 200)}`;
-        console.error("[chat] Gemini error:", lastErr);
-        continue;
-      }
-      const data = await res.json();
-      reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      if (reply) break;
-      lastErr = `${model}: empty response`;
-    }
+    const out = await generateText({
+      system: SYSTEM_PROMPT,
+      prompt,
+      temperature: 0.4,
+      maxTokens: 4096,
+      timeoutMs: 90_000,
+    });
+    const reply = out?.text || "";
 
     if (!reply) {
-      console.error("[chat] all models failed:", lastErr);
-      const hint =
-        lastStatus === 429
-          ? "AI is rate-limited right now — try again in a minute."
-          : "AI request failed — the AI service may be unavailable or the API key needs attention.";
+      console.error("[chat] all models failed:", lastLLMError);
+      const hint = / 429 /.test(lastLLMError)
+        ? "AI is rate-limited right now — try again in a minute."
+        : "AI request failed — the AI service may be unavailable or the API key needs attention.";
       return NextResponse.json({ error: hint }, { status: 502 });
     }
 

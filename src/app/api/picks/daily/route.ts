@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendDailyPicksDigest } from "@/lib/email";
-import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { aiConfigured, generateJSON, lastLLMError } from "@/lib/ai/llm";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { yahooBatchQuotes, getMarketContextText, yahooFundamentals } from "@/lib/ingestion/yahoo";
 import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
@@ -19,9 +19,9 @@ import {
 } from "@/lib/ingestion/earnings-signals";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
-
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
+// Open models on the shared free tier are slower than Gemini Flash; Hobby with
+// fluid compute allows up to 300s.
+export const maxDuration = 300;
 const FMP_KEY = process.env.FMP_API_KEY || "";
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || "";
 
@@ -493,7 +493,7 @@ async function deepRefinePicks(
   picks: Pick[],
   earnings: Map<string, EarningsInfo>
 ): Promise<Pick[]> {
-  if (!GEMINI_KEY || picks.length === 0) return picks;
+  if (!aiConfigured() || picks.length === 0) return picks;
   try {
     const lines: string[] = [];
     // symbol -> compact fundamentals for display on the cards
@@ -566,24 +566,15 @@ EARNINGS RULE: for any ⏰ stock reporting within ~2 days, earnings are a BINARY
 Return ONLY a JSON array: [{"symbol","conviction","rationale"}].`;
 
     let parsed: any[] | null = null;
-    for (const model of GEMINI_MODELS) {
-      const res = await geminiFetch(model, GEMINI_KEY, {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.3,
-          maxOutputTokens: 4096,
-          thinkingConfig: { thinkingBudget: 0 },
-        },
+    {
+      const arr = await generateJSON<any[]>({
+        prompt,
+        temperature: 0.3,
+        maxTokens: 4096,
+        timeoutMs: 90_000,
       });
-      if (!res?.ok) continue;
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) continue;
-      const arr = JSON.parse(text);
       if (Array.isArray(arr) && arr.length) {
         parsed = arr;
-        break;
       }
     }
     if (!parsed) return picks;
@@ -628,7 +619,7 @@ async function storePicks(
 }
 
 export async function GET(request: Request) {
-  if (!GEMINI_KEY) {
+  if (!aiConfigured()) {
     return NextResponse.json({ error: "AI not configured" }, { status: 500 });
   }
 
@@ -715,48 +706,16 @@ export async function GET(request: Request) {
     // the AI factors the regime into risk appetite and sector tilt. One call.
     const macro = await getMarketContextText();
 
-    let geminiErr = "";
-    async function callGemini(prompt: string): Promise<Pick[]> {
-      const models = GEMINI_MODELS;
-      for (const model of models) {
-        try {
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                  responseMimeType: "application/json",
-                  // Lower temperature → more consistent, less drift between runs.
-                  temperature: 0.35,
-                  maxOutputTokens: 8192,
-                  // Disable 2.5-flash "thinking" — it balloons latency on a
-                  // large prompt and was timing out the picks generation.
-                  thinkingConfig: { thinkingBudget: 0 },
-                },
-              }),
-              signal: AbortSignal.timeout(28000),
-            }
-          );
-          if (!res.ok) {
-            geminiErr = `${model}:${res.status}`;
-            console.log(`[picks] Gemini ${model} ${res.status}`);
-            continue;
-          }
-          const data = await res.json();
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!text) { geminiErr = `${model}:empty`; continue; }
-          const parsed = JSON.parse(text);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-          geminiErr = `${model}:not-array-or-empty`;
-        } catch (e) {
-          geminiErr = `${model}:${String(e).slice(0, 80)}`;
-          console.log(`[picks] Gemini ${model} error:`, e);
-          continue;
-        }
-      }
+    async function callModel(prompt: string): Promise<Pick[]> {
+      const parsed = await generateJSON<Pick[]>({
+        prompt,
+        // Lower temperature → more consistent, less drift between runs.
+        temperature: 0.35,
+        maxTokens: 8192,
+        timeoutMs: 120_000,
+      });
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      console.log(`[picks] model returned no picks: ${lastLLMError}`);
       return [];
     }
 
@@ -765,8 +724,8 @@ export async function GET(request: Request) {
     const longPrompt = buildLongTermPrompt(stockDataAll, snapshots.length, tradingDate, [], macro);
 
     const [shortPicks, longPicks] = await Promise.all([
-      callGemini(shortPrompt),
-      callGemini(longPrompt),
+      callModel(shortPrompt),
+      callModel(longPrompt),
     ]);
 
     console.log(`[picks] Got ${shortPicks.length} short + ${longPicks.length} long picks`);
@@ -776,7 +735,7 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           error: "Failed to generate picks",
-          debug: { snapshots: snapshots.length, geminiErr },
+          debug: { snapshots: snapshots.length, aiError: lastLLMError },
         },
         { status: 502 }
       );

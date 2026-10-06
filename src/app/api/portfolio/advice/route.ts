@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { aiConfigured, generateJSON, lastLLMError } from "@/lib/ai/llm";
+
+export const maxDuration = 300;
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
 
@@ -29,11 +31,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: USER_AI_DISABLED_MESSAGE }, { status: 503 });
   }
 
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-
-  if (!GEMINI_KEY) {
+  if (!aiConfigured()) {
     return NextResponse.json(
-      { error: "Gemini API key not configured" },
+      { error: "AI provider key not configured" },
       { status: 500 }
     );
   }
@@ -114,58 +114,22 @@ Rules:
 - urgency: high = act within days, medium = act within 1-2 weeks, low = no rush`;
 
   try {
-    // Try each supported model in turn so a transient failure or a retired
-    // model doesn't take the whole feature down.
-    let rawText = "";
-    let lastStatus = 0;
-    let lastErr = "";
-    for (const model of GEMINI_MODELS) {
-      const geminiRes = await geminiFetch(model, GEMINI_KEY, {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.4,
-        },
-      });
+    // generateJSON tries each configured model in turn, so a transient
+    // failure doesn't take the whole feature down.
+    const result = await generateJSON<AdviceResponse>({
+      prompt,
+      temperature: 0.4,
+      maxTokens: 4096,
+      timeoutMs: 90_000,
+    });
 
-      if (!geminiRes) {
-        lastErr = `${model}: network error`;
-        continue;
-      }
-      if (!geminiRes.ok) {
-        lastStatus = geminiRes.status;
-        lastErr = `${model}: ${geminiRes.status} ${(await geminiRes.text()).slice(0, 200)}`;
-        console.error("[portfolio/advice] Gemini error:", lastErr);
-        continue;
-      }
-      const geminiData = await geminiRes.json();
-      rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-      if (rawText) break;
-      lastErr = `${model}: empty response`;
-    }
-
-    if (!rawText) {
+    if (!result) {
       // 429 = rate limited/quota; surface a clearer hint to the client.
-      const hint =
-        lastStatus === 429
-          ? "AI is rate-limited right now — try again in a minute."
-          : "AI couldn't generate advice. Check the AI service status.";
-      console.error("[portfolio/advice] all models failed:", lastErr);
+      const hint = / 429 /.test(lastLLMError)
+        ? "AI is rate-limited right now — try again in a minute."
+        : "AI couldn't generate advice. Check the AI service status.";
+      console.error("[portfolio/advice] all models failed:", lastLLMError);
       return NextResponse.json({ error: hint }, { status: 502 });
-    }
-
-    let result: AdviceResponse;
-    try {
-      result = JSON.parse(rawText);
-    } catch {
-      console.error(
-        "Failed to parse Gemini response:",
-        rawText.slice(0, 500)
-      );
-      return NextResponse.json(
-        { error: "Invalid AI response format" },
-        { status: 502 }
-      );
     }
 
     if (!result.advice || !Array.isArray(result.advice)) {

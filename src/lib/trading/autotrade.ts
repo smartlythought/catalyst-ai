@@ -1,4 +1,4 @@
-import { GEMINI_MODELS, geminiFetch } from "@/lib/ai/models";
+import { aiConfigured, generateJSON } from "@/lib/ai/llm";
 import {
   ALPACA_ENABLED,
   ALPACA_IS_PAPER,
@@ -8,7 +8,6 @@ import {
   type OrderResult,
 } from "@/lib/trading/alpaca";
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const POSITION_PCT = parseFloat(process.env.ALPACA_POSITION_PCT || "0.05"); // 5% per trade
 const MAX_TRADES = parseInt(process.env.ALPACA_MAX_TRADES || "2", 10);
 const MIN_CONVICTION = parseInt(process.env.ALPACA_MIN_CONVICTION || "85", 10);
@@ -45,7 +44,7 @@ async function finalResearchSelect(
   shortlist: TradablePick[]
 ): Promise<TradablePick[]> {
   const byConviction = [...shortlist].sort((a, b) => b.conviction - a.conviction);
-  if (shortlist.length <= MAX_TRADES || !GEMINI_KEY) {
+  if (shortlist.length <= MAX_TRADES || !aiConfigured()) {
     return byConviction.slice(0, MAX_TRADES);
   }
   try {
@@ -61,28 +60,18 @@ CANDIDATES:
 ${lines}
 
 Return ONLY a JSON object: {"symbols":["X","Y"]} with exactly ${MAX_TRADES} tickers from the list.`;
-    for (const model of GEMINI_MODELS) {
-      const res = await geminiFetch(model, GEMINI_KEY, {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0,
-          maxOutputTokens: 256,
-          thinkingConfig: { thinkingBudget: 0 },
-        },
-      });
-      if (!res?.ok) continue;
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) continue;
-      const parsed = JSON.parse(text);
-      const syms: string[] = Array.isArray(parsed?.symbols) ? parsed.symbols : [];
-      const picked = syms
-        .map((s) => shortlist.find((p) => p.symbol.toUpperCase() === String(s).toUpperCase()))
-        .filter((p): p is TradablePick => !!p)
-        .slice(0, MAX_TRADES);
-      if (picked.length) return picked;
-    }
+    const parsed = await generateJSON<{ symbols?: unknown }>({
+      prompt,
+      temperature: 0,
+      maxTokens: 256,
+      timeoutMs: 45_000,
+    });
+    const syms: string[] = Array.isArray(parsed?.symbols) ? (parsed.symbols as string[]) : [];
+    const picked = syms
+      .map((s) => shortlist.find((p) => p.symbol.toUpperCase() === String(s).toUpperCase()))
+      .filter((p): p is TradablePick => !!p)
+      .slice(0, MAX_TRADES);
+    if (picked.length) return picked;
   } catch {
     // fall through to conviction ranking
   }
