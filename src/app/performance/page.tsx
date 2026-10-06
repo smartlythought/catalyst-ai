@@ -29,6 +29,12 @@ const PRIMARY: Record<Scope, Horizon[]> = {
   all: [20, 60],
 };
 
+const STRATEGY_LABEL: Record<string, string> = {
+  all: "All strategies",
+  "ai-v1": "Original AI picks",
+  "momentum-v2": "Momentum v2",
+};
+
 const pct = (v: number | null, digits = 1) =>
   v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}%`;
 const rate = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
@@ -49,6 +55,7 @@ export default function PerformancePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [scope, setScope] = useState<Scope>("short-term");
   const [includeImported, setIncludeImported] = useState(true);
+  const [strategy, setStrategy] = useState<string>("all");
 
   const load = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
@@ -72,9 +79,14 @@ export default function PerformancePage() {
       (data?.calls || []).filter(
         (c) =>
           (scope === "all" || c.timeframe === scope) &&
-          (includeImported || c.source === "live")
+          (includeImported || c.source === "live") &&
+          (strategy === "all" || c.strategy === strategy)
       ),
-    [data, scope, includeImported]
+    [data, scope, includeImported, strategy]
+  );
+  const strategies = useMemo(
+    () => Array.from(new Set((data?.calls || []).map((c) => c.strategy))).sort(),
+    [data]
   );
   const summaries = useMemo(() => HORIZONS.map((h) => summarize(calls, h)), [calls]);
   const outcomes = useMemo(() => outcomeCounts(calls), [calls]);
@@ -153,6 +165,23 @@ export default function PerformancePage() {
                 </button>
               ))}
             </div>
+            {strategies.length > 1 && (
+              <div className="flex gap-1.5 flex-wrap">
+                {["all", ...strategies].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStrategy(s)}
+                    className={`h-[28px] px-3 rounded-full text-[11px] font-bold border ${
+                      strategy === s
+                        ? "bg-accent-brand/15 text-accent-brand border-accent-brand/40"
+                        : "text-text-muted border-border-1"
+                    }`}
+                  >
+                    {STRATEGY_LABEL[s] || s}
+                  </button>
+                ))}
+              </div>
+            )}
             <label className="flex items-center gap-2 text-[12px] text-text-muted">
               <input
                 type="checkbox"

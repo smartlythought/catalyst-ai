@@ -12,6 +12,15 @@ import { computeUnusualSignals } from "@/lib/ingestion/signals";
 import { SMALL_CAP } from "@/lib/market-cap";
 import { logCalls } from "@/lib/performance/call-log";
 import {
+  STRATEGY_V2,
+  MOMENTUM_CANDIDATES,
+  MAX_V2_PICKS,
+  atrLevels,
+  calibratedConviction,
+  momentumFeatures,
+  type MomentumFeatures,
+} from "@/lib/strategy/momentum";
+import {
   getEarningsCalendar,
   getEarningsHistory,
   earningsLabel,
@@ -49,6 +58,11 @@ interface Pick {
     roe?: number;
     revGrowth?: number;
   };
+  // Which rule produced the call. "momentum-v2" picks have a conviction that
+  // is a backtested hit rate ("historical"), not an AI-asserted number.
+  strategy?: string;
+  convictionBasis?: "historical" | "ai";
+  momentumRank?: number;
 }
 
 interface StockSnapshot {
@@ -208,6 +222,34 @@ function snapshotSignals(s: StockSnapshot) {
   });
 }
 
+/**
+ * momentum-v2 candidates: rank the short-term pool by 12-1 month momentum
+ * (exact, from daily bars) and return the top MOMENTUM_CANDIDATES. Ranks are
+ * assigned BEFORE the earnings filter so they match the backtest calibration.
+ */
+async function momentumCandidates(
+  pool: StockSnapshot[],
+  earnings: Map<string, EarningsInfo>
+): Promise<{ s: StockSnapshot; f: MomentumFeatures; rank: number }[]> {
+  // Pre-select with the free 52-week change from the quote, then fetch daily
+  // bars only for that shortlist (keeps Yahoo calls to ~90).
+  const pre = [...pool]
+    .sort((a, b) => (b.week52ChangePct || 0) - (a.week52ChangePct || 0))
+    .slice(0, 90);
+  const feats = await momentumFeatures(pre.map((s) => s.symbol));
+  return pre
+    .filter((s) => feats.has(s.symbol))
+    .map((s) => ({ s, f: feats.get(s.symbol)! }))
+    .sort((a, b) => b.f.mom12_1 - a.f.mom12_1)
+    .map((c, i) => ({ ...c, rank: i + 1 }))
+    .filter((c) => {
+      // Earnings inside a ~2-week window = binary gap risk the rule isn't built for.
+      const ei = earnings.get(c.s.symbol.toUpperCase());
+      return !(ei && ei.daysAway >= 0 && ei.daysAway <= 14);
+    })
+    .slice(0, MOMENTUM_CANDIDATES);
+}
+
 function buildStockData(
   snapshots: StockSnapshot[],
   priority: Set<string>,
@@ -237,7 +279,16 @@ function buildStockData(
     selected.push(s);
     if (selected.length >= PROMPT_UNIVERSE_CAP) break;
   }
-  return selected.map(s => {
+  return selected.map((s) => stockLine(s, sigMap.get(s.symbol), earnings)).join("\n");
+}
+
+/** One prompt line of live data for a stock (shared by v1 and v2 prompts). */
+function stockLine(
+  s: StockSnapshot,
+  sig: ReturnType<typeof snapshotSignals> | undefined,
+  earnings: Map<string, EarningsInfo>
+): string {
+  {
     let line = `${s.symbol} | $${s.price.toFixed(2)} | ${s.changePct >= 0 ? "+" : ""}${s.changePct.toFixed(2)}%`;
     if (s.pe > 0) line += ` | PE:${s.pe.toFixed(1)}`;
     if (s.forwardPE > 0) line += ` | FwdPE:${s.forwardPE.toFixed(1)}`;
@@ -256,7 +307,6 @@ function buildStockData(
     if (s.analystBuy > 0) line += ` | Rec:${s.analystBuy}B/${s.analystHold}H/${s.analystSell}S`;
     if (s.targetMean > 0) line += ` | AvgPT:$${s.targetMean.toFixed(2)}`;
     // Unusual-activity flags last — the early "in play" tells.
-    const sig = sigMap.get(s.symbol);
     if (sig?.label) line += ` | ⚡${sig.label}`;
     // Earnings proximity — a binary catalyst the AI must weigh AND flag as risk.
     const ei = earnings.get(s.symbol.toUpperCase());
@@ -264,7 +314,7 @@ function buildStockData(
       line += ` | ⏰${earningsLabel(ei)}${ei.hour === "bmo" ? "(pre)" : ei.hour === "amc" ? "(post)" : ""}`;
     }
     return line;
-  }).join("\n");
+  }
 }
 
 function buildShortTermPrompt(stockData: string, count: number, today: string, phase: string, macro: string): string {
@@ -297,6 +347,31 @@ RULES:
 7. Roughly 7-8 BUY, 2-3 SELL.
 
 Return a JSON array of 8 to 10 objects with: "symbol", "companyName", "action" (BUY/SELL), "entryPrice", "targetPrice", "stopLoss", "timeframe" (always "short-term"), "conviction" (50-95), "rationale" (2 sentences), "catalysts" (array of 2-3). Return ONLY the JSON array.`;
+}
+
+/**
+ * momentum-v2 short-term prompt. Code has already chosen the candidates (12-1
+ * month momentum leaders) — the AI screens them for red flags and explains the
+ * ones it keeps. It does NOT set prices or conviction (code does, from ATR and
+ * the backtested hit rate), so it can't be overconfident about volatile names.
+ */
+function buildShortTermPromptV2(candidates: string, today: string, phase: string, macro: string): string {
+  return `You are a disciplined equity analyst. Today is ${today} (${phase}).
+
+${macro}Below are today's 12-month MOMENTUM LEADERS among liquid US stocks (market cap >= $1B), ranked by 12-1 month price momentum (#1 = strongest). Fields: rank, symbol, price, %day, valuation, 52-week data, analyst consensus (1=Strong Buy→5=Sell), ⚡ unusual activity, ⏰ upcoming earnings, then Mom12m = 12-1 month return, Mom1m = last-month return, Range = typical daily move.
+
+${candidates}
+
+TASK: Screen these candidates for a 1–4 week hold and KEEP between 4 and ${MAX_V2_PICKS} of them. Momentum leaders have historically beaten the market slightly more often than not, so your job is to REMOVE the ones with a concrete red flag, not to find exciting stories.
+
+Reject a candidate if any of these apply:
+- Earnings (⏰) within the next ~10 trading days — a binary gap risk the strategy is not built for.
+- A clear negative: bearish analyst consensus (worse than 3.0), a sharp recent breakdown, or an obvious one-off spike (e.g. buyout/FDA news) that has already played out.
+- Extreme extension: Mom1m above ~+25% (chasing a vertical move).
+- Valuation that is extreme even for its growth.
+When in doubt between two similar names, prefer the higher-ranked one.
+
+Return ONLY a JSON array of the KEPT stocks, each: {"symbol", "rationale" (2 sentences: why the momentum looks durable, and the main risk), "catalysts" (array of 2-3 short items)}. Do not include prices or conviction.`;
 }
 
 function buildLongTermPrompt(stockData: string, count: number, today: string, excludeSymbols: string[], macro: string): string {
@@ -366,6 +441,9 @@ function validatePicks(
     if (snap) {
       const sig = snapshotSignals(snap);
       if (sig.chips.length) p.signals = sig.chips;
+    }
+    if (p.momentumRank) {
+      p.signals = [`12-mo momentum #${p.momentumRank}`, ...(p.signals || [])];
     }
     // Attach an earnings chip if the company reports within ~10 days.
     const ei = earnings.get(p.symbol.toUpperCase());
@@ -585,10 +663,14 @@ Return ONLY a JSON array: [{"symbol","conviction","rationale"}].`;
       const fundamentals = fundMap.get(key) || p.fundamentals;
       const r = bySym.get(key);
       if (!r) return { ...p, fundamentals };
+      // momentum-v2 conviction is a backtested hit rate — never overwrite it
+      // with a model's opinion.
       const conv =
-        typeof r.conviction === "number"
-          ? Math.max(50, Math.min(95, Math.round(r.conviction)))
-          : p.conviction;
+        p.convictionBasis === "historical"
+          ? p.conviction
+          : typeof r.conviction === "number"
+            ? Math.max(50, Math.min(95, Math.round(r.conviction)))
+            : p.conviction;
       const rationale =
         typeof r.rationale === "string" && r.rationale.length > 10
           ? r.rationale
@@ -699,7 +781,9 @@ export async function GET(request: Request) {
     );
     // Earnings calendar for the next 10 days — one Finnhub call, injected as an
     // additive ⏰ signal (imminent earnings = binary catalyst, flagged as risk).
-    const earnings = await getEarningsCalendar(10).catch(() => new Map<string, EarningsInfo>());
+    // 30 days so momentum-v2 can screen out earnings inside its holding window;
+    // existing ⏰ display logic still filters to ≤7 / ≤10 days by daysAway.
+    const earnings = await getEarningsCalendar(30).catch(() => new Map<string, EarningsInfo>());
     const stockDataShort = buildStockData(shortSnapshots, priority, earnings);
     const stockDataAll = buildStockData(snapshots, priority, earnings);
     // Free macro snapshot (yield curve, VIX, USD, oil, gold, index trend) →
@@ -719,16 +803,87 @@ export async function GET(request: Request) {
       return [];
     }
 
+    // Short-term "momentum-v2": code selects 12-1 month momentum leaders, the AI
+    // screens them for red flags, code sets levels + calibrated conviction.
+    async function momentumV2Picks(): Promise<Pick[]> {
+      const cands = await momentumCandidates(shortSnapshots, earnings);
+      if (cands.length < 5) {
+        console.log(`[picks] momentum-v2: only ${cands.length} candidates with history — using v1`);
+        return [];
+      }
+      const pctStr = (v: number) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(0)}%`;
+      const lines = cands
+        .map(
+          (c) =>
+            `#${c.rank} ${stockLine(c.s, snapshotSignals(c.s), earnings)} | Mom12m:${pctStr(c.f.mom12_1)} | Mom1m:${pctStr(c.f.mom1m)} | Range:${(c.f.atrPct * 100).toFixed(1)}%`
+        )
+        .join("\n");
+      const kept = await generateJSON<{ symbol?: string; rationale?: string; catalysts?: string[] }[]>({
+        prompt: buildShortTermPromptV2(lines, tradingDate, phase, macro),
+        temperature: 0.2,
+        maxTokens: 4096,
+        timeoutMs: 120_000,
+      });
+
+      const bySym = new Map(cands.map((c) => [c.s.symbol.toUpperCase(), c]));
+      const seen = new Set<string>();
+      let chosen = (Array.isArray(kept) ? kept : [])
+        .map((k) => ({ k, c: bySym.get(String(k?.symbol || "").toUpperCase()) }))
+        .filter((x): x is { k: (typeof x)["k"]; c: NonNullable<(typeof x)["c"]> } => {
+          if (!x.c || seen.has(x.c.s.symbol)) return false;
+          seen.add(x.c.s.symbol);
+          return true;
+        });
+      if (!chosen.length) {
+        // AI screen unavailable → the rule still stands on its own.
+        console.log(`[picks] momentum-v2: AI screen unavailable (${lastLLMError}) — using top ranks`);
+        chosen = cands.slice(0, 6).map((c) => ({
+          k: {
+            rationale: `Ranked #${c.rank} by 12-month price momentum (${pctStr(c.f.mom12_1)}). AI news screen was unavailable for this run, so this is the rule's pick without a qualitative check.`,
+            catalysts: ["12-month momentum leader"],
+          },
+          c,
+        }));
+      }
+      return chosen
+        .sort((a, b) => a.c.rank - b.c.rank)
+        .slice(0, MAX_V2_PICKS)
+        .map(({ k, c }) => {
+          const entry = c.s.price;
+          const { stop, target } = atrLevels(entry, c.f.atr);
+          return {
+            symbol: c.s.symbol,
+            companyName: c.s.name,
+            action: "BUY" as const,
+            timeframe: "short-term" as const,
+            entryPrice: +entry.toFixed(2),
+            targetPrice: target,
+            stopLoss: stop,
+            conviction: calibratedConviction(c.rank),
+            rationale: k.rationale || `12-month momentum leader #${c.rank}.`,
+            catalysts: Array.isArray(k.catalysts) ? k.catalysts.slice(0, 3) : [],
+            strategy: STRATEGY_V2,
+            convictionBasis: "historical" as const,
+            momentumRank: c.rank,
+          };
+        });
+    }
+
     console.log("[picks] Generating short-term + long-term in parallel...");
     const shortPrompt = buildShortTermPrompt(stockDataShort, shortSnapshots.length, tradingDate, phase, macro);
     const longPrompt = buildLongTermPrompt(stockDataAll, snapshots.length, tradingDate, [], macro);
 
-    const [shortPicks, longPicks] = await Promise.all([
-      callModel(shortPrompt),
+    const [v2Short, longPicks] = await Promise.all([
+      momentumV2Picks().catch((e) => {
+        console.log("[picks] momentum-v2 failed — using v1:", e);
+        return [] as Pick[];
+      }),
       callModel(longPrompt),
     ]);
+    // Fall back to the previous AI-only short-term logic if v2 couldn't run.
+    const shortPicks = v2Short.length ? v2Short : await callModel(shortPrompt);
 
-    console.log(`[picks] Got ${shortPicks.length} short + ${longPicks.length} long picks`);
+    console.log(`[picks] Got ${shortPicks.length} short (${v2Short.length ? STRATEGY_V2 : "ai-v1"}) + ${longPicks.length} long picks`);
     const picks = [...shortPicks, ...longPicks];
 
     if (!picks.length) {
@@ -757,7 +912,9 @@ export async function GET(request: Request) {
       if (heldUpper.has(p.symbol.toUpperCase())) return true;
       const mcap = capMap.get(p.symbol.toUpperCase()) || 0;
       if (mcap > 0 && mcap < SHORT_TERM_MIN_CAP) return false;
-      if (p.conviction < SHORT_TERM_MIN_CONVICTION) return false;
+      // The 65 floor applies to AI-asserted conviction only; momentum-v2's is a
+      // backtested hit rate (51-56) by design.
+      if (p.convictionBasis !== "historical" && p.conviction < SHORT_TERM_MIN_CONVICTION) return false;
       return true;
     });
 

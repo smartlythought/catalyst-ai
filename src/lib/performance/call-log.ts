@@ -12,6 +12,21 @@ export interface LoggablePick {
   stopLoss?: number;
   currentPrice?: number;
   signals?: string[];
+  strategy?: string;
+}
+
+// The strategy that produced a call is stored as a "strategy:<name>" entry in
+// the logged signals array (no schema change needed). Calls without one predate
+// strategy tagging and are the original AI-only logic.
+export const DEFAULT_STRATEGY = "ai-v1";
+const STRATEGY_PREFIX = "strategy:";
+
+export function strategyFromSignals(signals: unknown): string {
+  if (Array.isArray(signals)) {
+    const tag = signals.find((s) => typeof s === "string" && s.startsWith(STRATEGY_PREFIX));
+    if (tag) return (tag as string).slice(STRATEGY_PREFIX.length);
+  }
+  return DEFAULT_STRATEGY;
 }
 
 /** Stable identity of a picks set — used to collapse duplicate snapshots. */
@@ -52,7 +67,12 @@ export function callRows(
       entry_price: num(p.entryPrice),
       target_price: num(p.targetPrice),
       stop_price: num(p.stopLoss),
-      signals: Array.isArray(p.signals) && p.signals.length ? p.signals : null,
+      signals:
+        source === "live"
+          ? [...(Array.isArray(p.signals) ? p.signals : []), `${STRATEGY_PREFIX}${p.strategy || DEFAULT_STRATEGY}`]
+          : Array.isArray(p.signals) && p.signals.length
+            ? p.signals
+            : null,
       source,
     }));
 }

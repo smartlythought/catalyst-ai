@@ -25,6 +25,7 @@ export interface EvaluatedCall {
   timeframe: "short-term" | "long-term";
   action: "BUY" | "SELL";
   conviction: number;
+  strategy: string; // "ai-v1" (original AI-only) | "momentum-v2" | …
   sector: string;
   status: "pending" | "active" | "no-data";
   entryDate: string | null;

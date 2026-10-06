@@ -32,6 +32,8 @@ export interface Signal {
   signals: SignalBreakdown[];
   // Unusual-activity flags (volume surge, gap, breakout) — early "in play" tells.
   activity?: string[];
+  // "historical" = conviction is a backtested hit rate (momentum-v2), not AI confidence.
+  convictionBasis?: "historical" | "ai";
   sparkline: number[];
   timestamp: string;
   fundamentals?: {

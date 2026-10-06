@@ -51,7 +51,11 @@ export function SignalCard({ signal }: SignalCardProps) {
         <ConvictionMeter
           value={signal.conviction}
           color={color}
-          label={signal.horizon}
+          label={
+            signal.convictionBasis === "historical"
+              ? `${signal.horizon} · hist. win rate`
+              : signal.horizon
+          }
         />
 
         {/* Row 2b: Trade levels inline — no click-through needed */}

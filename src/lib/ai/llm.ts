@@ -16,9 +16,14 @@
 import { GEMINI_MODELS } from "@/lib/ai/models";
 
 export const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+// Vetted on the free tier via /api/debug/llm (2026-10-06): Super answered a
+// full 200-stock Daily Picks prompt in 15s; Ultra 2.5s and Lightning 0.4s on a
+// smoke test. deepseek-v4.1-flash and glm-5.3-flash timed out, gpt-oss-20b
+// returned empty content — don't use them as fallbacks.
 export const NVIDIA_DEFAULT_MODELS = [
   "nvidia/nemotron-3-super-120b-a12b", // primary: agentic reasoning, tool calling, 1M context
-  "deepseek-ai/deepseek-v4.1-flash", // fallback: different vendor, fast
+  "nvidia/nemotron-3-ultra-550b-a55b", // fallback: larger, still responsive
+  "nvidia/nemotron-3.5-lightning-30b-a3b", // last resort: fastest
 ];
 
 export type ProviderName = "nvidia" | "gemini";

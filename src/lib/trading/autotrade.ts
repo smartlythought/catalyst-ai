@@ -10,7 +10,10 @@ import {
 
 const POSITION_PCT = parseFloat(process.env.ALPACA_POSITION_PCT || "0.05"); // 5% per trade
 const MAX_TRADES = parseInt(process.env.ALPACA_MAX_TRADES || "2", 10);
-const MIN_CONVICTION = parseInt(process.env.ALPACA_MIN_CONVICTION || "85", 10);
+// Short-term picks now carry a BACKTESTED hit rate as conviction (momentum-v2:
+// 56 for ranks #1-15, 51 for #16-25), so the old 85 gate would never fire.
+// 55 = trade only the top-calibrated tier. Override with ALPACA_MIN_CONVICTION.
+const MIN_CONVICTION = parseInt(process.env.ALPACA_MIN_CONVICTION || "55", 10);
 
 // Minimal shape we need from a daily pick.
 export interface TradablePick {

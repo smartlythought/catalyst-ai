@@ -20,6 +20,7 @@ interface Pick {
   catalysts: string[];
   currentPrice?: number;
   signals?: string[];
+  convictionBasis?: "historical" | "ai";
   fundamentals?: {
     analystConsensus?: string;
     peg?: number;
@@ -184,7 +185,7 @@ function PickCard({ pick }: { pick: Pick }) {
             <ConvictionMeter
               value={pick.conviction}
               color={actionColor}
-              label="Conv."
+              label={pick.convictionBasis === "historical" ? "Hist. win rate" : "Conv."}
             />
           </div>
         </div>

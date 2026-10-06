@@ -12,6 +12,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { yahooDailyBars, yahooSector, type DailyBar } from "@/lib/ingestion/yahoo";
 import { CURATED_UNIVERSE } from "@/lib/ingestion/universe";
 import { HORIZONS, type EvaluatedCall, type HorizonResult } from "./metrics";
+import { strategyFromSignals } from "./call-log";
 
 const SECTOR_ETF: Record<string, string> = {
   Technology: "XLK",
@@ -101,6 +102,7 @@ interface CallRow {
   target_price: number | string | null;
   stop_price: number | string | null;
   source: string;
+  signals: unknown;
 }
 
 export interface EvaluationResult {
@@ -114,7 +116,7 @@ export async function evaluateCalls(): Promise<EvaluationResult> {
   const sb = createServiceClient();
   const { data, error } = await sb
     .from("call_log")
-    .select("id, run_id, generated_at, symbol, timeframe, action, conviction, target_price, stop_price, source")
+    .select("id, run_id, generated_at, symbol, timeframe, action, conviction, target_price, stop_price, source, signals")
     .order("generated_at", { ascending: false })
     .limit(1500);
   if (error) throw new Error(`call_log: ${error.message}`);
@@ -154,6 +156,7 @@ export async function evaluateCalls(): Promise<EvaluationResult> {
       timeframe: r.timeframe,
       action: r.action,
       conviction: r.conviction,
+      strategy: strategyFromSignals(r.signals),
       sector,
       status: "no-data",
       entryDate: null,
