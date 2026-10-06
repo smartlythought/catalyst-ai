@@ -7,6 +7,7 @@ export const maxDuration = 300;
 // Provider diagnostics. Never returns key values — only lengths.
 //   GET                 → which provider/models are active
 //   GET ?test=1         → tiny JSON test on every configured model (latency)
+//   GET ?test=1&models=a,b → same, on specific NVIDIA model IDs
 //   GET ?bench=1        → realistic Daily-Picks-sized prompt on the first model
 // Tests are rate-limited to one per minute so the endpoint can't be abused.
 let lastRun = 0;
@@ -70,9 +71,21 @@ Return a JSON array of 10 objects with: "symbol", "action" (BUY/SELL), "entryPri
     });
   }
 
+  // ?models=a,b → test specific NVIDIA model IDs instead of the configured list
+  // (used to vet candidates before putting them in NVIDIA_MODELS).
+  const extra = (url.searchParams.get("models") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^[\w.-]+\/[\w.-]+$/.test(s))
+    .slice(0, 5);
+  const targets = extra.length
+    ? extra.map((model) => ({ provider: "nvidia" as const, model }))
+    : providers.flatMap((p) => p.models.map((model) => ({ provider: p.name, model })));
+
   const results = [];
-  for (const p of providers) {
-    for (const model of p.models) {
+  for (const { provider, model } of targets) {
+    {
+      const p = { name: provider };
       const r = await probeModel(p.name, model, {
         prompt: 'Reply with this JSON exactly: {"ok": true}',
         json: true,
