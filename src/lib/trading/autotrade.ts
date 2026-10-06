@@ -10,10 +10,12 @@ import {
 
 const POSITION_PCT = parseFloat(process.env.ALPACA_POSITION_PCT || "0.05"); // 5% per trade
 const MAX_TRADES = parseInt(process.env.ALPACA_MAX_TRADES || "2", 10);
-// Short-term picks now carry a BACKTESTED hit rate as conviction (momentum-v2:
-// 56 for ranks #1-15, 51 for #16-25), so the old 85 gate would never fire.
-// 55 = trade only the top-calibrated tier. Override with ALPACA_MIN_CONVICTION.
-const MIN_CONVICTION = parseInt(process.env.ALPACA_MIN_CONVICTION || "55", 10);
+// Gate for AI-asserted conviction (fallback ai-v1 picks).
+const MIN_CONVICTION = parseInt(process.env.ALPACA_MIN_CONVICTION || "85", 10);
+// Gate for rule-based picks (momentum-v2), which carry a BACKTESTED win rate:
+// 56 for ranks #1-15, 51 for #16-25 → >55 trades only the top tier. Their
+// headline conviction is a strength rank (90s), so it isn't used for gating.
+const MIN_WIN_RATE = parseInt(process.env.ALPACA_MIN_WIN_RATE || "55", 10);
 
 // Minimal shape we need from a daily pick.
 export interface TradablePick {
@@ -27,6 +29,7 @@ export interface TradablePick {
   stopLoss: number;
   currentPrice?: number;
   rationale?: string;
+  winRate?: number; // backtested hit rate (rule-based picks only)
 }
 
 export interface AutoTradeResult {
@@ -104,14 +107,17 @@ export async function autoTradePicks(
       (p) =>
         p.timeframe === "short-term" &&
         p.action === "BUY" &&
-        p.conviction > MIN_CONVICTION &&
+        (p.winRate != null ? p.winRate > MIN_WIN_RATE : p.conviction > MIN_CONVICTION) &&
         p.entryPrice > 0 &&
         p.targetPrice > 0 &&
         p.stopLoss > 0
     );
     base.candidates = shortlist.map((p) => p.symbol);
     if (shortlist.length === 0) {
-      return { ...base, reason: `No short-term BUYs over ${MIN_CONVICTION}% conviction` };
+      return {
+        ...base,
+        reason: `No short-term BUYs over ${MIN_WIN_RATE}% win rate (rule-based) or ${MIN_CONVICTION}% AI conviction`,
+      };
     }
 
     const [account, held, selected] = await Promise.all([

@@ -24,8 +24,20 @@ const CALIBRATION: { maxRank: number; hitRate: number }[] = [
   { maxRank: 25, hitRate: 51 },
 ];
 
-export function calibratedConviction(rank: number): number {
+/** Backtested share of picks at this rank that beat SPY over 20 trading days. */
+export function calibratedWinRate(rank: number): number {
   return (CALIBRATION.find((c) => rank <= c.maxRank) ?? CALIBRATION[CALIBRATION.length - 1]).hitRate;
+}
+
+/**
+ * Headline "Strength" score: momentum rank as a percentile of the liquid pool
+ * (#1 of 180 → 100, #2 → 99, #18 → 91). A true statement about how strong the
+ * trend is relative to other stocks — NOT a probability of winning (that is
+ * calibratedWinRate, shown alongside).
+ */
+export function strengthScore(rank: number, poolSize: number): number {
+  const n = Math.max(poolSize, rank, 1);
+  return Math.round((100 * (n - rank + 1)) / n);
 }
 
 // Backtest geometry: stop 2× ATR, target 3× ATR → ~47-51% hit the target first,

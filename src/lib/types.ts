@@ -32,8 +32,11 @@ export interface Signal {
   signals: SignalBreakdown[];
   // Unusual-activity flags (volume surge, gap, breakout) — early "in play" tells.
   activity?: string[];
-  // "historical" = conviction is a backtested hit rate (momentum-v2), not AI confidence.
-  convictionBasis?: "historical" | "ai";
+  // "strength" = conviction is a momentum rank percentile (momentum-v2) and
+  // winRate the backtested hit rate; "historical" = conviction IS that win rate
+  // (early v2 picks); "ai"/unset = AI-asserted confidence.
+  convictionBasis?: "strength" | "historical" | "ai";
+  winRate?: number;
   sparkline: number[];
   timestamp: string;
   fundamentals?: {

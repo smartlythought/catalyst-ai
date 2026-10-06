@@ -6,9 +6,10 @@ interface ConvictionMeterProps {
   value: number;
   color: string;
   label?: string;
+  suffix?: string; // "%" for probabilities/confidence; "" for scores like Strength
 }
 
-export function ConvictionMeter({ value, color, label }: ConvictionMeterProps) {
+export function ConvictionMeter({ value, color, label, suffix = "%" }: ConvictionMeterProps) {
   return (
     <div className="flex items-center gap-2">
       {label && (
@@ -24,7 +25,8 @@ export function ConvictionMeter({ value, color, label }: ConvictionMeterProps) {
         className={cn("font-mono text-[12px] font-medium")}
         style={{ color }}
       >
-        {value}%
+        {value}
+        {suffix}
       </span>
     </div>
   );

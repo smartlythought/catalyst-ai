@@ -48,15 +48,25 @@ export function SignalCard({ signal }: SignalCardProps) {
         </div>
 
         {/* Row 2: Conviction meter */}
-        <ConvictionMeter
-          value={signal.conviction}
-          color={color}
-          label={
-            signal.convictionBasis === "historical"
-              ? `${signal.horizon} · hist. win rate`
-              : signal.horizon
-          }
-        />
+        <div className="flex flex-col gap-1">
+          <ConvictionMeter
+            value={signal.conviction}
+            color={color}
+            label={
+              signal.convictionBasis === "strength"
+                ? `${signal.horizon} · Strength`
+                : signal.convictionBasis === "historical"
+                  ? `${signal.horizon} · hist. win rate`
+                  : signal.horizon
+            }
+            suffix={signal.convictionBasis === "strength" ? "" : "%"}
+          />
+          {signal.convictionBasis === "strength" && signal.winRate != null && (
+            <span className="text-[10px] text-text-faint font-mono">
+              Similar setups beat the S&amp;P {signal.winRate}% of the time (2-yr backtest)
+            </span>
+          )}
+        </div>
 
         {/* Row 2b: Trade levels inline — no click-through needed */}
         {signal.entry != null && signal.target != null && signal.stop != null && (

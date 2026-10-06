@@ -20,7 +20,8 @@ interface Pick {
   catalysts: string[];
   currentPrice?: number;
   signals?: string[];
-  convictionBasis?: "historical" | "ai";
+  convictionBasis?: "strength" | "historical" | "ai";
+  winRate?: number;
   fundamentals?: {
     analystConsensus?: string;
     peg?: number;
@@ -185,10 +186,22 @@ function PickCard({ pick }: { pick: Pick }) {
             <ConvictionMeter
               value={pick.conviction}
               color={actionColor}
-              label={pick.convictionBasis === "historical" ? "Hist. win rate" : "Conv."}
+              label={
+                pick.convictionBasis === "strength"
+                  ? "Strength"
+                  : pick.convictionBasis === "historical"
+                    ? "Hist. win rate"
+                    : "Conv."
+              }
+              suffix={pick.convictionBasis === "strength" ? "" : "%"}
             />
           </div>
         </div>
+        {pick.convictionBasis === "strength" && pick.winRate != null && (
+          <p className="text-[10px] text-text-faint font-mono -mt-1">
+            Similar setups beat the S&amp;P {pick.winRate}% of the time (2-yr backtest)
+          </p>
+        )}
 
         {/* Row 4: Rationale */}
         <p className="text-[12px] text-text-secondary leading-relaxed">

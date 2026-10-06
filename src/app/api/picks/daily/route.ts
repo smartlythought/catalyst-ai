@@ -16,7 +16,8 @@ import {
   MOMENTUM_CANDIDATES,
   MAX_V2_PICKS,
   atrLevels,
-  calibratedConviction,
+  calibratedWinRate,
+  strengthScore,
   momentumFeatures,
   type MomentumFeatures,
 } from "@/lib/strategy/momentum";
@@ -58,10 +59,13 @@ interface Pick {
     roe?: number;
     revGrowth?: number;
   };
-  // Which rule produced the call. "momentum-v2" picks have a conviction that
-  // is a backtested hit rate ("historical"), not an AI-asserted number.
+  // Which rule produced the call. For "momentum-v2" picks, conviction is a
+  // momentum Strength score (rank percentile, "strength") and winRate is the
+  // backtested hit rate for that rank. "historical" = early v2 picks whose
+  // conviction WAS the win rate. "ai" / unset = AI-asserted conviction.
   strategy?: string;
-  convictionBasis?: "historical" | "ai";
+  convictionBasis?: "strength" | "historical" | "ai";
+  winRate?: number;
   momentumRank?: number;
 }
 
@@ -209,6 +213,11 @@ const PROMPT_UNIVERSE_CAP = 200;
 // conviction floor so the list isn't padded with weak filler.
 const SHORT_TERM_MIN_CAP = 1_000_000_000;
 const SHORT_TERM_MIN_CONVICTION = 65;
+
+/** True for picks whose conviction comes from a rule (rank), not the AI. */
+function isRuleBased(p: Pick): boolean {
+  return p.convictionBasis === "strength" || p.convictionBasis === "historical";
+}
 
 function snapshotSignals(s: StockSnapshot) {
   return computeUnusualSignals({
@@ -663,10 +672,10 @@ Return ONLY a JSON array: [{"symbol","conviction","rationale"}].`;
       const fundamentals = fundMap.get(key) || p.fundamentals;
       const r = bySym.get(key);
       if (!r) return { ...p, fundamentals };
-      // momentum-v2 conviction is a backtested hit rate — never overwrite it
+      // Rule-based conviction (momentum-v2 strength rank) — never overwrite it
       // with a model's opinion.
       const conv =
-        p.convictionBasis === "historical"
+        isRuleBased(p)
           ? p.conviction
           : typeof r.conviction === "number"
             ? Math.max(50, Math.min(95, Math.round(r.conviction)))
@@ -859,11 +868,12 @@ export async function GET(request: Request) {
             entryPrice: +entry.toFixed(2),
             targetPrice: target,
             stopLoss: stop,
-            conviction: calibratedConviction(c.rank),
+            conviction: strengthScore(c.rank, shortSnapshots.length),
+            winRate: calibratedWinRate(c.rank),
             rationale: k.rationale || `12-month momentum leader #${c.rank}.`,
             catalysts: Array.isArray(k.catalysts) ? k.catalysts.slice(0, 3) : [],
             strategy: STRATEGY_V2,
-            convictionBasis: "historical" as const,
+            convictionBasis: "strength" as const,
             momentumRank: c.rank,
           };
         });
@@ -912,9 +922,9 @@ export async function GET(request: Request) {
       if (heldUpper.has(p.symbol.toUpperCase())) return true;
       const mcap = capMap.get(p.symbol.toUpperCase()) || 0;
       if (mcap > 0 && mcap < SHORT_TERM_MIN_CAP) return false;
-      // The 65 floor applies to AI-asserted conviction only; momentum-v2's is a
-      // backtested hit rate (51-56) by design.
-      if (p.convictionBasis !== "historical" && p.conviction < SHORT_TERM_MIN_CONVICTION) return false;
+      // The 65 floor applies to AI-asserted conviction only; momentum-v2 picks
+      // are gated by their rank, not by a model's confidence.
+      if (!isRuleBased(p) && p.conviction < SHORT_TERM_MIN_CONVICTION) return false;
       return true;
     });
 

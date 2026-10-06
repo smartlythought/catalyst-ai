@@ -72,6 +72,7 @@ export default async function HomePage() {
       fundamentals: p.fundamentals,
       activity: p.signals,
       convictionBasis: p.convictionBasis,
+      winRate: p.winRate,
     }));
     signals = ([...allSignals].sort((a, b) => b.conviction - a.conviction).slice(0, 10)) as Signal[];
   }
