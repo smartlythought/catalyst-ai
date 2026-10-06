@@ -37,7 +37,7 @@ export function calibratedWinRate(rank: number): number {
  */
 export function strengthScore(rank: number, poolSize: number): number {
   const n = Math.max(poolSize, rank, 1);
-  return Math.round((100 * (n - rank + 1)) / n);
+  return Math.floor((100 * (n - rank + 1)) / n); // floor: only #1 scores 100
 }
 
 // Backtest geometry: stop 2× ATR, target 3× ATR → ~47-51% hit the target first,
