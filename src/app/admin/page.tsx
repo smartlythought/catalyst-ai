@@ -51,6 +51,14 @@ const JOBS: JobDef[] = [
     viewHref: "/picks",
   },
   {
+    key: "backfill-calls",
+    label: "Import Past Calls",
+    desc: "Add picks made before the Track Record existed (one-time, safe to re-run)",
+    est: "Free",
+    free: true,
+    viewHref: "/performance",
+  },
+  {
     key: "cleanup-history",
     label: "Clean AI History",
     desc: "Remove duplicate history rows (same picks copied across days)",
@@ -127,7 +135,9 @@ export default function AdminPage() {
       } else {
         const inner = data.result || {};
         const summary =
-          inner.deleted != null
+          inner.calls != null && inner.runs != null
+            ? `✅ ${inner.calls} past calls from ${inner.runs} runs imported`
+            : inner.deleted != null
             ? `✅ removed ${inner.deleted} duplicate${inner.deleted === 1 ? "" : "s"} · ${inner.kept} kept`
             : inner.picks != null
             ? `✅ ${Array.isArray(inner.picks) ? inner.picks.length : inner.picks} picks generated`
@@ -201,6 +211,9 @@ export default function AdminPage() {
           Everything runs on demand — nothing auto-runs or spends on its own.
           Tap Run to refresh. Signed in as {email}.
         </p>
+        <Link href="/performance" className="inline-block mt-2 text-[12px] font-bold text-accent-brand">
+          Track Record &rsaquo;
+        </Link>
       </header>
 
       <div className="px-5 flex flex-col gap-3">

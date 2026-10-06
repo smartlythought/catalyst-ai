@@ -259,6 +259,52 @@ export async function yahooFundamentals(
   }
 }
 
+export interface DailyBar {
+  date: string; // YYYY-MM-DD (session date)
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+/**
+ * Daily OHLC bars, OLDEST-first, from `from` to now. Used to score past calls
+ * (entry at the open, exits at the close, target/stop via high/low). The last
+ * bar may be today's in-progress session.
+ */
+export async function yahooDailyBars(symbol: string, from: Date): Promise<DailyBar[]> {
+  try {
+    const res = await yf.chart(symbol, { period1: from, period2: new Date(), interval: "1d" });
+    return (res?.quotes || [])
+      .filter((q: any) => q.open != null && q.close != null)
+      .map((q: any) => ({
+        date: (q.date instanceof Date ? q.date : new Date(q.date)).toISOString().split("T")[0],
+        open: q.open as number,
+        high: (q.high ?? Math.max(q.open, q.close)) as number,
+        low: (q.low ?? Math.min(q.open, q.close)) as number,
+        close: q.close as number,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+const sectorCache = new Map<string, string>();
+
+/** GICS-style sector name from Yahoo's asset profile ("" if unknown). Cached. */
+export async function yahooSector(symbol: string): Promise<string> {
+  const hit = sectorCache.get(symbol);
+  if (hit !== undefined) return hit;
+  try {
+    const qs: any = await yf.quoteSummary(symbol, { modules: ["assetProfile"] });
+    const sector = qs?.assetProfile?.sector || "";
+    sectorCache.set(symbol, sector);
+    return sector;
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Historical daily closes, returned NEWEST-first to match the FMP convention
  * the rest of the app expects.

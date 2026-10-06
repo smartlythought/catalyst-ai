@@ -46,6 +46,12 @@ export default function HistoryPage() {
           A saved record of each day&apos;s AI analysis — picks, high-yield, and
           IPOs — for tracking and back-testing.
         </p>
+        <Link
+          href="/performance"
+          className="inline-flex items-center gap-1 mt-2 text-[12px] font-bold text-accent-brand"
+        >
+          How did the picks perform? Track Record &rsaquo;
+        </Link>
       </header>
 
       {loading && (

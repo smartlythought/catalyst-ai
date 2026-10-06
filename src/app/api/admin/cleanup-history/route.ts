@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { pickSignature } from "@/lib/performance/call-log";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,13 +11,6 @@ export const maxDuration = 60;
 // consecutive duplicates, so history reflects only real generations.
 //
 // Called server-side by /api/admin/run (owner-gated) with the CRON_SECRET.
-function pickSignature(payload: any): string {
-  if (!Array.isArray(payload)) return "empty";
-  return payload
-    .map((p) => `${p?.symbol}:${p?.action}:${p?.conviction}:${p?.entryPrice}`)
-    .sort()
-    .join("|");
-}
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");

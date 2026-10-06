@@ -10,6 +10,7 @@ import { buildScanUniverse } from "@/lib/ingestion/universe";
 import { getHeldSymbols } from "@/lib/trading/alpaca";
 import { computeUnusualSignals } from "@/lib/ingestion/signals";
 import { SMALL_CAP } from "@/lib/market-cap";
+import { logCalls } from "@/lib/performance/call-log";
 import {
   getEarningsCalendar,
   getEarningsHistory,
@@ -609,14 +610,19 @@ Return ONLY a JSON array: [{"symbol","conviction","rationale"}].`;
   }
 }
 
-async function storePicks(tradingDate: string, picks: Pick[], scanned: number) {
+async function storePicks(
+  tradingDate: string,
+  picks: Pick[],
+  scanned: number,
+  generatedAt: string
+) {
   try {
     const sb = createServiceClient();
     await sb.from("daily_picks").upsert({
       generated_date: tradingDate,
       picks,
       stocks_scanned: scanned,
-      generated_at: new Date().toISOString(),
+      generated_at: generatedAt,
     }, { onConflict: "generated_date" });
   } catch {}
 }
@@ -796,8 +802,11 @@ export async function GET(request: Request) {
       return true;
     });
 
-    await storePicks(tradingDate, finalPicks, snapshots.length);
+    const generatedAt = new Date().toISOString();
+    await storePicks(tradingDate, finalPicks, snapshots.length, generatedAt);
     await saveAISnapshot("picks", finalPicks);
+    // Permanent, append-only record of every call for the Track Record page.
+    await logCalls(finalPicks, generatedAt);
 
     // Fully-automatic PAPER trading: once per day, turn today's short-term,
     // high-conviction (>85%) BUYs into bracket orders after a final AI research
@@ -816,7 +825,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       picks: finalPicks,
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       stocksScanned: snapshots.length,
       disclaimer: "AI-generated recommendations for informational purposes only. Not financial advice.",
     });

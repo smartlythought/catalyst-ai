@@ -16,6 +16,7 @@ const JOBS: Record<string, { path: string; method: "GET" | "POST" }> = {
   weekly: { path: "/api/ingest/weekly-picks", method: "GET" },
   radar: { path: "/api/market/radar?refresh=1", method: "GET" },
   "cleanup-history": { path: "/api/admin/cleanup-history", method: "POST" },
+  "backfill-calls": { path: "/api/admin/backfill-calls", method: "POST" },
 };
 
 export async function POST(request: NextRequest) {
