@@ -50,6 +50,24 @@ export async function getTodayAISnapshot(
   }
 }
 
+/** Like getTodayAISnapshot, plus WHEN it was generated (for freshness stamps). */
+export async function getTodayAISnapshotWithTime(
+  kind: "picks" | "penny" | "ipo" | "trades"
+): Promise<{ payload: any; createdAt: string } | null> {
+  try {
+    const sb = createServiceClient();
+    const { data } = await sb
+      .from("daily_ai_history")
+      .select("payload, created_at")
+      .eq("kind", kind)
+      .eq("snapshot_date", todayET())
+      .single();
+    return data ? { payload: data.payload, createdAt: data.created_at } : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface AISnapshotRow {
   kind: string;
   snapshot_date: string;

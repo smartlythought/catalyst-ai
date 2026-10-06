@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
+import { UpdatedStamp } from "@/components/updated-stamp";
+import { formatET } from "@/lib/time";
 import {
   HORIZONS,
   MIN_RELIABLE_N,
@@ -110,6 +112,9 @@ export default function PerformancePage() {
           Every call is logged permanently and scored against the S&amp;P 500 (SPY)
           and its sector — so we know if the picks actually work.
         </p>
+        {data?.computedAt && !data.error && (
+          <UpdatedStamp at={data.computedAt} label="Scored" staleAfterHours={24} className="mt-1.5" />
+        )}
       </header>
 
       {loading && (
@@ -353,7 +358,7 @@ export default function PerformancePage() {
               backtests — treat anything under {MIN_RELIABLE_N} calls as noise.
               {data?.computedAt && (
                 <span className="block mt-1 font-mono">
-                  Scored {new Date(data.computedAt).toLocaleString()}
+                  Scored {formatET(data.computedAt)} using daily closing prices.
                 </span>
               )}
             </div>

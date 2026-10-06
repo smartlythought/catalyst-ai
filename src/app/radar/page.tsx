@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 interface RadarHit {
   symbol: string;
@@ -62,14 +63,6 @@ export default function RadarPage() {
     load();
   }, [load]);
 
-  const scanTime = at
-    ? new Date(at).toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-        timeZone: "America/New_York",
-      }) + " ET"
-    : "";
-
   return (
     <div className="min-h-dvh pb-24 safe-top">
       <header className="px-5 pt-4 pb-2">
@@ -91,9 +84,11 @@ export default function RadarPage() {
         </p>
         {scanned > 0 && (
           <p className="text-[11px] text-text-faint mt-1 font-mono">
-            {scanned} scanned · {hits.length} in play · {scanTime}
+            {scanned} scanned · {hits.length} in play
           </p>
         )}
+        {/* Live during market hours — older than ~30 min is worth a Rescan. */}
+        <UpdatedStamp at={at} label="Scanned" staleAfterHours={0.5} emptyText="Scanning…" className="mt-1" />
       </header>
 
       <div className="px-5 mt-3 flex flex-col gap-2.5">

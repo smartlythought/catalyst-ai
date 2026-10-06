@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 interface PennyPick {
   symbol: string;
@@ -39,6 +40,7 @@ function PickSkeleton() {
 
 export default function PennyStocksPage() {
   const [picks, setPicks] = useState<PennyPick[]>([]);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"all" | "high" | "speculative">("all");
@@ -49,7 +51,10 @@ export default function PennyStocksPage() {
         if (!r.ok) throw new Error("Failed to load");
         return r.json();
       })
-      .then((d) => setPicks(d.picks || []))
+      .then((d) => {
+        setPicks(d.picks || []);
+        setGeneratedAt(d.generatedAt || null);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -66,6 +71,7 @@ export default function PennyStocksPage() {
         <p className="text-[13px] text-text-muted mt-1">
           Small-cap stocks under $20 with strong growth potential
         </p>
+        <UpdatedStamp at={generatedAt} label="Picks generated" staleIfNotToday emptyText="Generates automatically each weekday morning" className="mt-1.5" />
       </header>
 
       {/* Tabs */}

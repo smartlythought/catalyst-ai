@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 interface ExecEvent {
   company: string;
@@ -323,19 +324,9 @@ export default function EventsPage() {
             <span>
               {filtered.length} event{filtered.length !== 1 ? "s" : ""}
             </span>
-            {data.generatedAt && (
-              <>
-                <span className="text-border-1">|</span>
-                <span>
-                  Updated{" "}
-                  {new Date(data.generatedAt).toLocaleTimeString("en-US", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </>
-            )}
           </div>
+          {/* Calendar is cached for up to an hour. */}
+          <UpdatedStamp at={data.generatedAt} label="Calendar updated" staleAfterHours={2} className="mt-1.5" />
         </div>
       )}
 

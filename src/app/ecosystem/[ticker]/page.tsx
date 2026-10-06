@@ -4,6 +4,7 @@ import { use, useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { cn, formatPercent } from "@/lib/utils";
 import { TabBar } from "@/components/tab-bar";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 /* ─── Types ─── */
 
@@ -225,6 +226,7 @@ export default function EcosystemPage({
   const { ticker } = use(params);
   const symbol = ticker.toUpperCase();
 
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [data, setData] = useState<EcosystemData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -238,7 +240,10 @@ export default function EcosystemPage({
         if (!r.ok) throw new Error(`Failed to load ecosystem (${r.status})`);
         return r.json();
       })
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        setLoadedAt(Date.now());
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [symbol]);
@@ -413,6 +418,7 @@ export default function EcosystemPage({
             ? `AI-generated · ${data.totalRelationships} companies`
             : `${data.totalRelationships} companies in the network`}
         </p>
+        {loadedAt && <UpdatedStamp at={loadedAt} label="Partner prices loaded" staleAfterHours={0.5} className="mt-1" />}
       </header>
 
       {/* Summary card */}

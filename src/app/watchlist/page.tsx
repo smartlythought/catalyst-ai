@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 interface WatchlistItem {
   symbol: string;
@@ -18,6 +19,7 @@ export default function WatchlistPage() {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/watchlist")
@@ -27,6 +29,7 @@ export default function WatchlistPage() {
           setError(data.error);
         } else {
           setItems(data.watchlist || []);
+          setLoadedAt(Date.now());
         }
       })
       .catch(() => setError("Failed to load"))
@@ -83,6 +86,7 @@ export default function WatchlistPage() {
         <p className="text-[13px] text-text-muted mt-0.5">
           {items.length} {items.length === 1 ? "stock" : "stocks"} tracked
         </p>
+        {loadedAt && <UpdatedStamp at={loadedAt} label="Prices loaded" staleAfterHours={0.5} className="mt-1" />}
       </header>
 
       {items.length === 0 ? (

@@ -8,6 +8,7 @@ import { Sparkline } from "@/components/sparkline";
 import { ConvictionMeter } from "@/components/conviction-meter";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
+import { UpdatedStamp } from "@/components/updated-stamp";
 import type { Signal } from "@/lib/types";
 
 const signalTypeColors: Record<string, string> = {
@@ -76,7 +77,8 @@ export default function SignalDetailPage({
                 sentiment: p.action === "SELL" ? ("negative" as const) : ("positive" as const),
               })),
               sparkline: [],
-              timestamp: data.generatedAt || new Date().toISOString(),
+              // No fallback to 'now' — an unknown time must not look fresh.
+              timestamp: data.generatedAt || "",
             });
             fetch(`/api/stock/${p.symbol}?range=1D`)
               .then((r) => r.json())
@@ -202,6 +204,7 @@ export default function SignalDetailPage({
             )}
           </div>
         </div>
+        <UpdatedStamp at={signal.timestamp || null} label="Call made" staleIfNotToday emptyText="Call time unknown" className="mt-2" />
       </header>
 
       {/* Live price vs entry alert */}

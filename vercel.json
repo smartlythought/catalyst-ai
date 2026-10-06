@@ -1,12 +1,12 @@
 {
   "crons": [
-    {
-      "path": "/api/ingest/universe",
-      "schedule": "0 10 * * 1"
-    },
-    {
-      "path": "/api/market/radar?refresh=1&notify=1",
-      "schedule": "30 15 * * 1-5"
-    }
+    { "path": "/api/cron/run?job=penny", "schedule": "0 11 * * 1-5" },
+    { "path": "/api/cron/run?job=ipo", "schedule": "0 11 * * 1-5" },
+    { "path": "/api/cron/run?job=picks", "schedule": "0 12 * * 1-5" },
+    { "path": "/api/cron/run?job=radar", "schedule": "0 15 * * 1-5" },
+    { "path": "/api/cron/run?job=ingest", "schedule": "0 21 * * 1-5" },
+    { "path": "/api/cron/run?job=deep", "schedule": "0 22 * * 1-5" },
+    { "path": "/api/cron/run?job=weekly", "schedule": "30 22 * * 5" },
+    { "path": "/api/cron/run?job=universe", "schedule": "0 10 * * 1" }
   ]
 }

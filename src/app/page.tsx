@@ -4,7 +4,8 @@ import { MarketIndices } from "@/components/market-indices";
 import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
 import { createServiceClient } from "@/lib/supabase/server";
-import { getTodayDate } from "@/lib/mock-data";
+import { todayHeaderET } from "@/lib/time";
+import { UpdatedStamp } from "@/components/updated-stamp";
 import type { Signal } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -86,7 +87,7 @@ export default async function HomePage() {
       <header className="safe-top px-5 pb-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-[13px] text-text-muted font-medium">
-            {getTodayDate()}
+            {todayHeaderET()}
           </span>
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-2 border border-border-1">
             <span className="w-[6px] h-[6px] rounded-full bg-pos-green animate-live-pulse" />
@@ -189,6 +190,13 @@ export default async function HomePage() {
         <p className="text-[11px] text-text-faint mt-0.5">
           Short-term &middot; 1&ndash;4 weeks &middot; Long-term picks on Daily Picks
         </p>
+        <UpdatedStamp
+          at={row?.generated_at}
+          label="Picks generated"
+          staleIfNotToday
+          emptyText="Today's picks generate automatically ~8 AM ET on weekdays"
+          className="mt-1.5"
+        />
 
         {/* Stats strip */}
         <div className="flex items-center gap-4 mt-3">
@@ -225,8 +233,9 @@ export default async function HomePage() {
               Today&apos;s picks aren&apos;t ready yet
             </div>
             <div className="text-[12px] text-text-faint">
-              AI picks generate each trading day. Meanwhile, explore market
-              movers and earnings in Discover.
+              Picks generate automatically around 8 AM ET each weekday, before
+              the market opens. Meanwhile, explore market movers and earnings
+              in Discover.
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { aiConfigured, generateJSON, lastLLMError } from "@/lib/ai/llm";
 import { withinDailyAIBudget, AI_BUDGET_MESSAGE } from "@/lib/ai/usage";
 import { USER_AI_ENABLED, USER_AI_DISABLED_MESSAGE } from "@/lib/ai/config";
-import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
+import { saveAISnapshot, getTodayAISnapshotWithTime } from "@/lib/ai/history";
 import { getMarketContextText } from "@/lib/ingestion/yahoo";
 
 export const dynamic = "force-dynamic";
@@ -38,11 +38,12 @@ export async function GET() {
 
   // Serve today's cached snapshot if we already generated it — high-yield only
   // needs to run once per day, not on every page view (saves Gemini quota).
-  const cached = await getTodayAISnapshot("penny");
+  const snap = await getTodayAISnapshotWithTime("penny");
+  const cached = snap?.payload;
   if (Array.isArray(cached) && cached.length > 0) {
     return NextResponse.json({
       picks: cached,
-      generatedAt: new Date().toISOString(),
+      generatedAt: snap!.createdAt, // when it was actually generated, not now
       cached: true,
       disclaimer:
         "High-risk, high-reward. Small-cap stocks are volatile. Not financial advice.",

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { TabBar } from "@/components/tab-bar";
 import { MarketIndices } from "@/components/market-indices";
 import { Disclaimer } from "@/components/disclaimer";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 interface MarketItem {
   symbol: string;
@@ -47,15 +48,6 @@ interface PulseData {
   updatedAt?: string;
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 export default function DiscoverPage() {
   const router = useRouter();
@@ -116,11 +108,6 @@ export default function DiscoverPage() {
             Discover
           </h1>
           <div className="flex items-center gap-2">
-            {lastUpdated && (
-              <span className="font-mono text-[10px] text-text-faint">
-                {timeAgo(lastUpdated)}
-              </span>
-            )}
             <button
               onClick={() => loadData(true)}
               disabled={refreshing}
@@ -136,6 +123,8 @@ export default function DiscoverPage() {
         <p className="text-[13px] text-text-muted mt-1">
           Market overview and trends
         </p>
+        {/* Quotes come from caches up to ~5 min old; refreshes every minute. */}
+        <UpdatedStamp at={lastUpdated} label="Market data as of" staleAfterHours={0.5} emptyText="Loading market data…" className="mt-1.5" />
       </header>
 
       <MarketIndices />

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { TabBar } from "@/components/tab-bar";
 import { StockSearchInput } from "@/components/stock-search-input";
 import { Disclaimer } from "@/components/disclaimer";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 interface Holding {
   ticker: string;
@@ -33,6 +34,7 @@ interface PortfolioAdvice {
 }
 
 export default function PortfolioPage() {
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [totalValue, setTotalValue] = useState(0);
   const [totalPnl, setTotalPnl] = useState(0);
@@ -62,6 +64,7 @@ export default function PortfolioPage() {
           setHoldings(data.holdings || []);
           setTotalValue(data.totalValue || 0);
           setTotalPnl(data.totalPnl || 0);
+          setLoadedAt(Date.now());
         } catch {}
       }
       setLoading(false);
@@ -91,6 +94,7 @@ export default function PortfolioPage() {
       setHoldings(data.holdings || []);
       setTotalValue(data.totalValue || 0);
       setTotalPnl(data.totalPnl || 0);
+      setLoadedAt(Date.now());
     } catch {}
     setSaving(false);
   }
@@ -172,6 +176,7 @@ export default function PortfolioPage() {
         <h1 className="text-[28px] font-extrabold tracking-[-0.6px]">
           Portfolio
         </h1>
+        {loadedAt && <UpdatedStamp at={loadedAt} label="Prices loaded" staleAfterHours={0.5} className="mt-1" />}
       </header>
 
       {/* Summary card */}

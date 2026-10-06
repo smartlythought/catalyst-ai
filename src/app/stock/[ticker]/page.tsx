@@ -9,6 +9,7 @@ import { FinancialsChart } from "@/components/financials-chart";
 import { useRealtimePrice } from "@/hooks/use-realtime-price";
 import { USER_AI_ENABLED } from "@/lib/ai/config";
 import { FundamentalChips, type Fundamentals } from "@/components/fundamental-chips";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 interface NewsItem {
   title: string;
@@ -299,12 +300,23 @@ export default function StockDeepDivePage({
             <div className="flex items-center gap-1.5 mt-2">
               <span className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: sessionColor, boxShadow: session === "market-hours" ? "0 0 4px var(--pos-green)" : "none" }} />
               <span className="text-[11px] font-medium" style={{ color: sessionColor }}>{sessionLabel}</span>
+              {/* `et` is only for the session math above. Format the real
+                  instant in ET — formatting the already-shifted `et` again
+                  showed the wrong hour for viewers outside US Eastern. */}
               <span className="text-[11px] text-text-faint ml-1">
-                {et.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/New_York" })} ET
+                {now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/New_York" })} ET
               </span>
             </div>
           );
         })()}
+        {price > 0 && (
+          <UpdatedStamp
+            at={livePrice?.timestamp || data?.quote?.timestamp || null}
+            label={livePrice ? "Live trade" : "Price as of"}
+            staleAfterHours={24}
+            className="mt-1"
+          />
+        )}
 
         {/* Deep fundamentals chips (analyst consensus, PT, PEG, ROE) */}
         {data?.fundamentals && (

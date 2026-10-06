@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { aiConfigured, generateJSON } from "@/lib/ai/llm";
 import { withinDailyAIBudget } from "@/lib/ai/usage";
-import { saveAISnapshot, getTodayAISnapshot } from "@/lib/ai/history";
+import { saveAISnapshot, getTodayAISnapshotWithTime } from "@/lib/ai/history";
 import { getMarketContextText } from "@/lib/ingestion/yahoo";
 
 export const dynamic = "force-dynamic";
@@ -164,13 +164,14 @@ export async function GET() {
   // Pin per day: if today's IPO snapshot exists, return it unchanged so ratings
   // stay stable all day across views (no flip-flopping). It regenerates only
   // once per day on the first request.
-  const cached = await getTodayAISnapshot("ipo");
+  const snap = await getTodayAISnapshotWithTime("ipo");
+  const cached = snap?.payload;
   if (Array.isArray(cached) && cached.length > 0) {
     return NextResponse.json({
       ipos: cached,
       total: cached.length,
       cached: true,
-      generatedAt: new Date().toISOString(),
+      generatedAt: snap!.createdAt, // when it was actually generated, not now
     });
   }
 

@@ -6,6 +6,7 @@ import { TabBar } from "@/components/tab-bar";
 import { Disclaimer } from "@/components/disclaimer";
 import { ConvictionMeter } from "@/components/conviction-meter";
 import { FundamentalChips } from "@/components/fundamental-chips";
+import { UpdatedStamp } from "@/components/updated-stamp";
 
 interface Pick {
   symbol: string;
@@ -363,18 +364,14 @@ export default function PicksPage() {
               <span style={{ color: "var(--neg-red)" }}>
                 {sellCount} SELL
               </span>
-              {data.generatedAt && (
-                <>
-                  <span className="text-border-1">|</span>
-                  <span>
-                    {new Date(data.generatedAt).toLocaleTimeString("en-US", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </>
-              )}
             </div>
+            <UpdatedStamp
+              at={data.generatedAt}
+              label="Picks generated"
+              staleIfNotToday
+              emptyText="Not generated yet — runs automatically ~8 AM ET on weekdays"
+              className="mt-1.5"
+            />
           </div>
 
           {/* Cards */}
